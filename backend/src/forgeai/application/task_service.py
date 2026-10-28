@@ -34,6 +34,6 @@ class TaskService:
         task = self.repository.get_by_id(task_id)
 
         if task is None:
-            raise TaskNotFoundError(f"Task with ID {task_id} was not found")
+            raise TaskNotFoundError(f'Task with ID {task_id} was not found')
 
         return task

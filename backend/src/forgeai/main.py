@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from forgeai.api.health import router as health_router
+from forgeai.api.tasks import router as tasks_router
 from forgeai.core.config import get_settings
 
 settings = get_settings()
@@ -11,6 +12,7 @@ app = FastAPI(
 )
 
 app.include_router(health_router)
+app.include_router(tasks_router)
 
 @app.get("/")
 def root() -> dict[str, str]:

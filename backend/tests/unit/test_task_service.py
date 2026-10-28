@@ -4,8 +4,6 @@ import pytest
 
 from forgeai.application.task_service import TaskNotFoundError, TaskService
 
-from forgeai.domain.task import Task
-
 
 class FakeSession:
     def __init__(self, commit_error=None):

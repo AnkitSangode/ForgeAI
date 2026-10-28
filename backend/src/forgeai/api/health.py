@@ -1,9 +1,8 @@
-from fastapi import APIRouter,HTTPException
+from fastapi import APIRouter, HTTPException
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from forgeai.infrastructure.session import engine
-
 
 router = APIRouter(prefix="/api/v1/health",tags=["health"])
 
