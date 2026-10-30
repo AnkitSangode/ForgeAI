@@ -17,6 +17,19 @@ EXCLUDED_DIRECTORIES = {
     "build",
 }
 
+MAX_REPOSITORY_FILES = 5000
+
+IMPORTANT_FILES = {
+    "README.md",
+    "pyproject.toml",
+    "package.json",
+    "requirements.txt",
+    "tsconfig.json",
+    "alembic.ini",
+    "Dockerfile",
+    ".env.example",
+}
+
 
 class RepositoryInspector:
     """Inspects a local repository and returns its file information."""
@@ -66,9 +79,22 @@ class RepositoryInspector:
 
                     repository_files.append(relative_path)
 
+            prioritized_files = sorted(
+                repository_files,
+                key=lambda file_path: (
+                    self._get_file_priority(file_path),
+                    file_path.lower(),
+                ),
+            )
+
+            truncated = len(prioritized_files) > MAX_REPOSITORY_FILES
+
+            selected_files = prioritized_files[:MAX_REPOSITORY_FILES]
+
             return RepositoryInspectionResult(
                 status="available",
-                files=repository_files,
+                files=selected_files,
+                truncated=truncated,
             )
 
         except OSError as exc:
@@ -77,3 +103,20 @@ class RepositoryInspector:
                 files=[],
                 error=f"Repository inspection failed: {exc}",
             )
+
+    @staticmethod
+    def _get_file_priority(file_path: str) -> int:
+        filename = os.path.basename(file_path)
+
+        if filename in IMPORTANT_FILES:
+            return 1
+
+        if file_path.endswith((".py", ".ts", ".tsx", ".js", ".jsx")):
+            if "tests" in file_path.lower().split(os.sep):
+                return 3
+            return 2
+
+        if "tests" in file_path.lower().split(os.sep):
+            return 3
+
+        return 4

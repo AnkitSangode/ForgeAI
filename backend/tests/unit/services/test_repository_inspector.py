@@ -1,4 +1,8 @@
 from forgeai.services.repository_inspector import RepositoryInspector
+from forgeai.services.repository_inspector import (
+    MAX_REPOSITORY_FILES,
+    RepositoryInspector,
+)
 
 
 def test_inspect_valid_repository(tmp_path):
@@ -99,10 +103,47 @@ def test_inspect_nested_directories(tmp_path):
     # Assert
     assert result.status == "available"
     assert set(result.files) == {
-        str(
-            source.relative_to(repository) / "auth.py"
-        ),
-        str(
-            source.relative_to(repository) / "user.py"
-        ),
+        str(source.relative_to(repository) / "auth.py"),
+        str(source.relative_to(repository) / "user.py"),
     }
+
+
+def test_inspect_prioritizes_important_files(tmp_path):
+    repository = tmp_path / "my-project"
+    repository.mkdir()
+
+    (repository / "image.png").write_text("image")
+    (repository / "main.py").write_text("print('Hello')")
+    (repository / "README.md").write_text("# Project")
+    (repository / "package.json").write_text("{}")
+
+    inspector = RepositoryInspector()
+    result = inspector.inspect(str(repository))
+
+    assert result.status == "available"
+    assert set(result.files[:2]) == {
+        "README.md",
+        "package.json",
+    }
+
+    assert result.files[2] == "main.py"
+    assert result.files[3] == "image.png"
+    assert result.truncated is False
+
+
+def test_inspect_truncates_large_repository(tmp_path):
+    repository = tmp_path / "large-project"
+    repository.mkdir()
+
+    for index in range(MAX_REPOSITORY_FILES + 1):
+        (repository / f"file_{index}.txt").write_text("content")
+
+    (repository / "README.md").write_text("# Important project")
+
+    inspector = RepositoryInspector()
+    result = inspector.inspect(str(repository))
+
+    assert result.status == "available"
+    assert len(result.files) == MAX_REPOSITORY_FILES
+    assert result.truncated is True
+    assert "README.md" in result.files
