@@ -1,4 +1,3 @@
-from forgeai.services.repository_inspector import RepositoryInspector
 from forgeai.services.repository_inspector import (
     MAX_REPOSITORY_FILES,
     RepositoryInspector,

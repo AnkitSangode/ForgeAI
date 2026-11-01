@@ -1,10 +1,10 @@
-
 from typing import Literal
 
 from langgraph.graph import END, START, StateGraph
 
 from forgeai.agent.nodes import (
     create_initial_plan_node,
+    inspect_repostiory_node,
     prepare_task_node,
 )
 from forgeai.agent.state import ForgeAgentState
@@ -21,6 +21,14 @@ def route_after_prepare(
     return "continue"
 
 
+def route_after_inspection(state: ForgeAgentState) -> Literal["continue", "stop"]:
+    """Decide whether the workflow should continue to planning."""
+
+    if state.get("status") == "failed":
+        return "continue"
+    return "continue"
+
+
 def build_agent_graph():
     """Build and compile the initial ForgeAI workflow."""
 
@@ -28,6 +36,7 @@ def build_agent_graph():
 
     # Register nodes.
     builder.add_node("prepare_task", prepare_task_node)
+    builder.add_node("inspect_repository", inspect_repostiory_node)
     builder.add_node("create_initial_plan", create_initial_plan_node)
 
     # Define the entry point.
@@ -38,9 +47,15 @@ def build_agent_graph():
         "prepare_task",
         route_after_prepare,
         {
-            "continue": "create_initial_plan",
+            "continue": "inspect_repository",
             "stop": END,
         },
+    )
+
+    builder.add_conditional_edges(
+        "inspect_repository",
+        route_after_inspection,
+        {"continue": "create_initial_plan", "stop": END},
     )
 
     # Finish after planning.
@@ -50,7 +65,3 @@ def build_agent_graph():
 
 
 agent_graph = build_agent_graph()
-
-
-
-

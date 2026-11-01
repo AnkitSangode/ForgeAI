@@ -8,9 +8,11 @@ class ForgeAgentState(TypedDict):
     task_description: str
     repository_url: str
 
+    repository_path: NotRequired[str]
     repository_context: NotRequired[str]
     repository_status: NotRequired[str]
     repository_files: NotRequired[list[str]]
+    repository_truncated: NotRequired[bool]
     plan: NotRequired[list[str]]
     status: NotRequired[str]
-    error: NotRequired[str] 
+    error: NotRequired[str]
