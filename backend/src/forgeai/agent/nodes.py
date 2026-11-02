@@ -1,4 +1,5 @@
 from forgeai.agent.state import ForgeAgentState
+from forgeai.services.repository_context_builder import RepositoryContextBuilder
 from forgeai.services.repository_inspector import RepositoryInspector
 
 
@@ -23,7 +24,7 @@ def prepare_task_node(state: ForgeAgentState) -> dict:
 
     return {
         "repository_context": (
-            f"Target repository: {repository_url}\n" f"Engineering task: {description}"
+            f"Target repository: {repository_url}\nEngineering task: {description}"
         ),
         "status": "in_progress",
     }
@@ -68,4 +69,46 @@ def create_initial_plan_node(state: ForgeAgentState) -> dict:
             "Review the result before requesting the approval.",
         ],
         "status": "plan_created",
+    }
+
+
+def build_repository_context_node(state: ForgeAgentState) -> dict:
+    """Build bounded repository context from discovered files."""
+
+    repository_path = state["repository_path"]
+    repository_files = state.get("repository_files", [])
+
+    context_builder = RepositoryContextBuilder()
+
+    result = context_builder.build(
+        repository_path=repository_path,
+        file_paths=repository_files,
+    )
+
+    context_files = [
+        {
+            "file_path": file.file_path,
+            "content": file.content,
+        }
+        for file in result.files
+    ]
+
+    if result.status == "unavailable":
+        return {
+            "repository_context_files": context_files,
+            "repository_context_status": result.status,
+            "repository_context_bytes": result.total_bytes,
+            "repository_context_skipped_files": result.skipped_files,
+            "repository_context_errors": result.errors,
+            "status": "failed",
+            "error": (result.errors[0] if result.errors else "Unable to build repository context."),
+        }
+
+    return {
+        "repository_context_files": context_files,
+        "repository_context_status": result.status,
+        "repository_context_bytes": result.total_bytes,
+        "repository_context_skipped_files": result.skipped_files,
+        "repository_context_errors": result.errors,
+        "status": "context_built",
     }

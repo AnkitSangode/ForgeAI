@@ -16,9 +16,7 @@ router = APIRouter(prefix="/api/v1/tasks", tags=["tasks"])
     response_model=TaskRead,
     status_code=status.HTTP_201_CREATED,
 )
-def create_task(
-    payload: TaskCreate, db: Annotated[Session, Depends(get_db)]
-) -> TaskRead:
+def create_task(payload: TaskCreate, db: Annotated[Session, Depends(get_db)]) -> TaskRead:
     service = TaskService(db)
 
     task = service.create_task(

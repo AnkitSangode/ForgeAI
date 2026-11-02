@@ -8,6 +8,12 @@ class ForgeAgentState(TypedDict):
     task_description: str
     repository_url: str
 
+    repository_context_files: NotRequired[list[dict[str, str]]]
+    repository_context_status: NotRequired[str]
+    repository_context_bytes: NotRequired[int]
+    repository_context_skipped_files: NotRequired[list[str]]
+    repository_context_errors: NotRequired[list[str]]
+
     repository_path: NotRequired[str]
     repository_context: NotRequired[str]
     repository_status: NotRequired[str]

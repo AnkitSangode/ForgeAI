@@ -78,3 +78,38 @@ def test_agent_graph_preserves_repository_truncation_status(tmp_path):
     result = agent_graph.invoke(initial_state)
 
     assert result["repository_truncated"] is False
+
+
+def test_agent_graph_continues_with_partial_repository_context(tmp_path):
+    repository = tmp_path / "test-project"
+    repository.mkdir()
+
+    oversized_content = "x" * (100 * 1024 + 1)
+
+    (repository / "README.md").write_text(
+        oversized_content,
+        encoding="utf-8",
+    )
+
+    (repository / "main.py").write_text(
+        "def main(): pass",
+        encoding="utf-8",
+    )
+
+    initial_state = {
+        "task_id": "task-123",
+        "task_description": "Fix authentication bug",
+        "repository_url": "https://github.com/example/project",
+        "repository_path": str(repository),
+    }
+
+    result = agent_graph.invoke(initial_state)
+
+    assert result["repository_context_status"] == "partial"
+    assert result["status"] == "plan_created"
+
+    assert len(result["repository_context_files"]) == 1
+    assert result["repository_context_files"][0]["file_path"] == "main.py"
+
+    assert "README.md" in result["repository_context_skipped_files"]
+    assert result["plan"]

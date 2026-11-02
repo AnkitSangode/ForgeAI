@@ -85,9 +85,7 @@ def test_create_task_rolls_back_when_commit_fails():
 
 def test_create_task_rolls_back_when_repository_fails():
     session = FakeSession()
-    repository = FakeTaskRepository(
-        create_error=RuntimeError("Simulated repository failure")
-    )
+    repository = FakeTaskRepository(create_error=RuntimeError("Simulated repository failure"))
     service = make_task_service(session, repository)
 
     with pytest.raises(

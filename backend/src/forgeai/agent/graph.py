@@ -3,6 +3,7 @@ from typing import Literal
 from langgraph.graph import END, START, StateGraph
 
 from forgeai.agent.nodes import (
+    build_repository_context_node,
     create_initial_plan_node,
     inspect_repostiory_node,
     prepare_task_node,
@@ -25,7 +26,18 @@ def route_after_inspection(state: ForgeAgentState) -> Literal["continue", "stop"
     """Decide whether the workflow should continue to planning."""
 
     if state.get("status") == "failed":
-        return "continue"
+        return "stop"
+    return "continue"
+
+
+def route_after_context_build(
+    state: ForgeAgentState,
+) -> Literal["continue", "stop"]:
+    """Decide whether the workflow can continue after context construction."""
+
+    if state.get("status") == "failed":
+        return "stop"
+
     return "continue"
 
 
@@ -37,6 +49,7 @@ def build_agent_graph():
     # Register nodes.
     builder.add_node("prepare_task", prepare_task_node)
     builder.add_node("inspect_repository", inspect_repostiory_node)
+    builder.add_node("build_repository_context", build_repository_context_node)
     builder.add_node("create_initial_plan", create_initial_plan_node)
 
     # Define the entry point.
@@ -55,7 +68,16 @@ def build_agent_graph():
     builder.add_conditional_edges(
         "inspect_repository",
         route_after_inspection,
-        {"continue": "create_initial_plan", "stop": END},
+        {"continue": "build_repository_context", "stop": END},
+    )
+
+    builder.add_conditional_edges(
+        "build_repository_context",
+        route_after_context_build,
+        {
+            "continue": "create_initial_plan",
+            "stop": END,
+        },
     )
 
     # Finish after planning.

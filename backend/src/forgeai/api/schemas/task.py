@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 class TaskCreate(BaseModel):
     """Validate data submitted when creating a task."""
 
-    title: str = Field(min_length=1,max_length=200)
+    title: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1)
     repository_url: HttpUrl
 

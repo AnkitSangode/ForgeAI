@@ -1,6 +1,6 @@
-
 from functools import lru_cache
 
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,9 +9,14 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     environment: str = "development"
 
-    database_url: str = (
-        "postgresql+psycopg://forgeai:forgeai@localhost:5432/forgeai"
-    )
+    database_url: str = "postgresql+psycopg://forgeai:forgeai@localhost:5432/forgeai"
+
+    # OpenAI configuration
+    openai_api_key: SecretStr
+    openai_model: str = "gpt-4.1"
+    openai_temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    openai_timeout: float = Field(default=60.0, gt=0)
+    openai_max_retries: int = Field(default=2, ge=0)
 
     model_config = SettingsConfigDict(
         env_file=".env",

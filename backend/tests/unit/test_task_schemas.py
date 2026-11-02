@@ -25,10 +25,10 @@ def test_task_create_rejects_empty_title():
 
 
 def test_task_create_reject_invalid_url():
-    
+
     with pytest.raises(ValidationError):
         TaskCreate(
             title="fix failing tests",
-            description= "Investigate failing test",
-            repository_url= "Invalid URL"
+            description="Investigate failing test",
+            repository_url="Invalid URL",
         )

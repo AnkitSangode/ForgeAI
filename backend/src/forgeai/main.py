@@ -14,6 +14,7 @@ app = FastAPI(
 app.include_router(health_router)
 app.include_router(tasks_router)
 
+
 @app.get("/")
 def root() -> dict[str, str]:
     return {"name": settings.app_name, "version": settings.app_version}

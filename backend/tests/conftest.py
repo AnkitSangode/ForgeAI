@@ -1,4 +1,3 @@
-
 import os
 from collections.abc import Generator
 from pathlib import Path
@@ -20,23 +19,17 @@ def get_test_database_url() -> str:
     env_path = Path(__file__).resolve().parents[1] / ".env"
     env_values = dotenv_values(env_path)
 
-    url = (
-        os.getenv("FORGEAI_TEST_DATABASE_URL")
-        or env_values.get("FORGEAI_TEST_DATABASE_URL")
-    )
+    url = os.getenv("FORGEAI_TEST_DATABASE_URL") or env_values.get("FORGEAI_TEST_DATABASE_URL")
 
     if not url:
         raise RuntimeError(
-            "Set FORGEAI_TEST_DATABASE_URL in backend/.env "
-            "to your dedicated forgeai_test database."
+            "Set FORGEAI_TEST_DATABASE_URL in backend/.env to your dedicated forgeai_test database."
         )
 
     parsed_url = make_url(url)
 
     if parsed_url.database != "forge_ai_test":
-        raise RuntimeError(
-            "Integration tests may only use the forgeai_test database."
-        )
+        raise RuntimeError("Integration tests may only use the forgeai_test database.")
 
     return url
 
