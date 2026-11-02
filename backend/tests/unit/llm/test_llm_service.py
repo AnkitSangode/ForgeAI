@@ -75,9 +75,7 @@ def test_generate_rejects_empty_prompt(llm_service, mock_provider, prompt):
 
 
 def test_generate_propagates_provider_failure(llm_service, mock_provider):
-    mock_provider.generate.side_effect = RuntimeError(
-        "Provider unavailable."
-    )
+    mock_provider.generate.side_effect = RuntimeError("Provider unavailable.")
 
     with pytest.raises(RuntimeError, match="Provider unavailable."):
         llm_service.generate("Investigate authentication bug")

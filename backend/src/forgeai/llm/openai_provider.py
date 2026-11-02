@@ -1,10 +1,25 @@
 from typing import TypeVar
 
 from langchain_openai import ChatOpenAI
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    RateLimitError,
+)
 from pydantic import BaseModel
 
 from forgeai.core.config import Settings
 from forgeai.llm.base import LLMProvider
+from forgeai.llm.exceptions import (
+    LLMAuthenticationError,
+    LLMConnectionError,
+    LLMProviderError,
+    LLMRateLimitError,
+    LLMResponseError,
+    LLMTimeoutError,
+)
 from forgeai.llm.schemas import LLMResponse
 
 T = TypeVar("T", bound=BaseModel)
@@ -31,32 +46,65 @@ class OpenAIProvider(LLMProvider):
     ) -> LLMResponse:
         """Generate a plain text or structured response."""
 
-        if response_schema is None:
-            message = self._llm.invoke(prompt)
-            content = message.content
-        else:
-            structured_llm = self._llm.with_structured_output(
-                response_schema,
-                include_raw=True,
+        try:
+            if response_schema is None:
+                message = self._llm.invoke(prompt)
+                content = message.content
+            else:
+                structured_llm = self._llm.with_structured_output(
+                    response_schema,
+                    include_raw=True,
+                )
+
+                result = structured_llm.invoke(prompt)
+
+                if result["parsing_error"] is not None:
+                    raise LLMResponseError("Unable to parse structured LLM response.")
+
+                if result["parsed"] is None:
+                    raise LLMResponseError("LLM returned an empty structured response.")
+
+                message = result["raw"]
+                content = result["parsed"]
+
+            usage = getattr(message, "usage_metadata", None) or {}
+            response_metadata = getattr(message, "response_metadata", {}) or {}
+
+            return LLMResponse(
+                content=content,
+                model=response_metadata.get("model_name", self._model),
+                input_tokens=usage.get("input_tokens"),
+                output_tokens=usage.get("output_tokens"),
             )
 
-            result = structured_llm.invoke(prompt)
+        except LLMResponseError:
+            raise
 
-            if result["parsing_error"] is not None:
-                raise ValueError("Unable to parse structured LLM response.")
+        except (
+            AuthenticationError,
+            RateLimitError,
+            APITimeoutError,
+            APIConnectionError,
+            APIStatusError,
+        ) as error:
+            raise self._normalize_exception(error) from error
 
-            if result["parsed"] is None:
-                raise ValueError("LLM returned an empty structured response.")
+    def _normalize_exception(self, error: Exception) -> Exception:
+        """Convert known OpenAI exceptions into ForgeAI exceptions."""
 
-            message = result["raw"]
-            content = result["parsed"]
+        if isinstance(error, AuthenticationError):
+            return LLMAuthenticationError("LLM authentication failed.")
 
-        usage = getattr(message, "usage_metadata", None) or {}
-        response_metadata = getattr(message, "response_metadata", {}) or {}
+        if isinstance(error, RateLimitError):
+            return LLMRateLimitError("LLM rate limit exceeded.")
 
-        return LLMResponse(
-            content=content,
-            model=response_metadata.get("model_name", self._model),
-            input_tokens=usage.get("input_tokens"),
-            output_tokens=usage.get("output_tokens"),
-        )
+        if isinstance(error, APITimeoutError):
+            return LLMTimeoutError("LLM request timed out.")
+
+        if isinstance(error, APIConnectionError):
+            return LLMConnectionError("Unable to connect to LLM provider.")
+
+        if isinstance(error, APIStatusError):
+            return LLMProviderError("LLM provider returned an API error.")
+
+        return error

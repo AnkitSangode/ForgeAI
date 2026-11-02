@@ -1,10 +1,26 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    RateLimitError,
+)
 from pydantic import BaseModel, SecretStr
 
 from forgeai.core.config import Settings
+from forgeai.llm.exceptions import (
+    LLMAuthenticationError,
+    LLMConnectionError,
+    LLMProviderError,
+    LLMRateLimitError,
+    LLMResponseError,
+    LLMTimeoutError,
+)
 from forgeai.llm.openai_provider import OpenAIProvider
 from forgeai.llm.schemas import LLMResponse
 
@@ -39,6 +55,48 @@ def mock_llm(monkeypatch):
     )
 
     return llm_instance, chat_openai_mock
+
+
+def create_openai_error(error_type):
+    request = httpx.Request(
+        "POST",
+        "https://api.openai.com/v1/chat/completions",
+    )
+
+    if error_type is APITimeoutError:
+        return APITimeoutError(request=request)
+
+    if error_type is APIConnectionError:
+        return APIConnectionError(
+            message="Connection failed.",
+            request=request,
+        )
+
+    if error_type is AuthenticationError:
+        response = httpx.Response(401, request=request)
+        return AuthenticationError(
+            message="Invalid API key.",
+            response=response,
+            body=None,
+        )
+
+    if error_type is RateLimitError:
+        response = httpx.Response(429, request=request)
+        return RateLimitError(
+            message="Rate limit exceeded.",
+            response=response,
+            body=None,
+        )
+
+    if error_type is APIStatusError:
+        response = httpx.Response(500, request=request)
+        return APIStatusError(
+            message="Internal server error.",
+            response=response,
+            body=None,
+        )
+
+    raise ValueError("Unsupported error type.")
 
 
 def test_generate_plain_text_response(settings, mock_llm):
@@ -144,11 +202,11 @@ def test_generate_structured_response_with_parsing_error(
     provider = OpenAIProvider(settings)
 
     with pytest.raises(
-        ValueError,
+        LLMResponseError,
         match="Unable to parse structured LLM response.",
     ):
         provider.generate(
-            prompt="Investigate authentication.",
+            prompt="Create a research finding.",
             response_schema=ResearchFinding,
         )
 
@@ -168,10 +226,74 @@ def test_generate_structured_response_with_empty_result(
     provider = OpenAIProvider(settings)
 
     with pytest.raises(
-        ValueError,
+        LLMResponseError,
         match="LLM returned an empty structured response.",
     ):
         provider.generate(
-            prompt="Investigate authentication.",
+            prompt="Create a research finding.",
             response_schema=ResearchFinding,
+        )
+
+
+@pytest.mark.parametrize(
+    ("openai_error", "expected_error"),
+    [
+        (AuthenticationError, LLMAuthenticationError),
+        (RateLimitError, LLMRateLimitError),
+        (APITimeoutError, LLMTimeoutError),
+        (APIConnectionError, LLMConnectionError),
+        (APIStatusError, LLMProviderError),
+    ],
+)
+def test_generate_normalizes_openai_exceptions(
+    settings,
+    mock_llm,
+    openai_error,
+    expected_error,
+):
+    llm_instance, _ = mock_llm
+
+    llm_instance.invoke.side_effect = create_openai_error(openai_error)
+
+    provider = OpenAIProvider(settings)
+
+    with pytest.raises(expected_error):
+        provider.generate(
+            prompt="Investigate the authentication bug.",
+        )
+
+
+def test_generate_normalizes_unexpected_exceptions(
+    settings,
+    mock_llm,
+):
+    llm_instance, _ = mock_llm
+
+    llm_instance.invoke.side_effect = RuntimeError("Unexpected internal error.")
+
+    provider = OpenAIProvider(settings)
+
+    with pytest.raises(RuntimeError, match="Unexpected internal error."):
+        provider.generate(
+            prompt="Investigate the authentication bug.",
+        )
+
+def test_generate_does_not_normalize_programming_errors(
+    settings,
+    mock_llm,
+):
+    llm_instance, _ = mock_llm
+
+    llm_instance.invoke.side_effect = AttributeError(
+        "Unexpected attribute access."
+    )
+
+    provider = OpenAIProvider(settings)
+
+    with pytest.raises(
+        AttributeError,
+        match="Unexpected attribute access.",
+    ):
+        provider.generate(
+            prompt="Investigate the authentication bug.",
         )
