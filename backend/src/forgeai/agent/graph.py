@@ -2,8 +2,10 @@ from typing import Literal
 
 from langgraph.graph import END, START, StateGraph
 
+from forgeai.agent.coder import CoderAgent
 from forgeai.agent.nodes import (
     build_repository_context_node,
+    create_coder_node,
     create_planner_node,
     create_researcher_node,
     inspect_repostiory_node,
@@ -50,9 +52,19 @@ def route_after_planning(
     return "continue"
 
 
+def route_after_research(
+    state: ForgeAgentState,
+) -> Literal["continue", "stop"]:
+    if state.get("status") == "failed":
+        return "stop"
+
+    return "continue"
+
+
 def build_agent_graph(
     planner_agent: PlannerAgent,
     researcher_agent: ResearcherAgent,
+    coder_agent: CoderAgent,
 ):
     """Build and compile the ForgeAI agent workflow."""
 
@@ -60,6 +72,7 @@ def build_agent_graph(
 
     planner_node = create_planner_node(planner_agent)
     researcher_node = create_researcher_node(researcher_agent)
+    coder_node = create_coder_node(coder_agent)
 
     # Register nodes
     builder.add_node("prepare_task", prepare_task_node)
@@ -70,6 +83,7 @@ def build_agent_graph(
     )
     builder.add_node("planner", planner_node)
     builder.add_node("researcher", researcher_node)
+    builder.add_node("coder", coder_node)
 
     # Entry point
     builder.add_edge(START, "prepare_task")
@@ -114,7 +128,15 @@ def build_agent_graph(
         },
     )
 
-    # Researcher completes the current workflow
-    builder.add_edge("researcher", END)
+    builder.add_conditional_edges(
+        "researcher",
+        route_after_research,
+        {
+            "continue": "coder",
+            "stop": END,
+        },
+    )
+
+    builder.add_edge("coder", END)
 
     return builder.compile()

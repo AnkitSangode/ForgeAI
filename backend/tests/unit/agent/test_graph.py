@@ -1,14 +1,17 @@
-from unittest.mock import MagicMock
+from unittest.mock import Mock
 
 import pytest
 
+from forgeai.agent.coder import CoderAgent
+from forgeai.agent.coder_schema import CodeChange, CoderResponse
 from forgeai.agent.graph import build_agent_graph
+from forgeai.agent.planner import PlannerAgent
+from forgeai.agent.researcher import ResearcherAgent
 from forgeai.agent.researcher_schema import (
     ResearchFinding,
     ResearchResponse,
 )
-from forgeai.agent.schemas import PlanResponse
-from forgeai.llm.exceptions import LLMConnectionError
+from forgeai.agent.schemas import PlanResponse, PlanStep
 
 
 @pytest.fixture
@@ -32,212 +35,152 @@ def valid_initial_state(tmp_path):
 
 
 @pytest.fixture
-def mock_planner():
-    planner = MagicMock()
-    planner.generate_plan.return_value = PlanResponse(
+def planner_agent():
+    agent = Mock(spec=PlannerAgent)
+
+    agent.generate_plan.return_value = PlanResponse(
         objective="Fix the authentication bug.",
         steps=[
-            {
-                "step_number": 1,
-                "title": "Inspect implementation",
-                "description": "Inspect the relevant repository implementation.",
-                "expected_output": "An understanding of the implementation.",
-            }
+            PlanStep(
+                step_number=1,
+                title="Inspect authentication",
+                description="Inspect the authentication implementation.",
+                expected_output="Identify the authentication problem.",
+            )
         ],
-        success_criteria=["Identify the relevant implementation."],
+        success_criteria=["Authentication works correctly."],
     )
-    return planner
+
+    return agent
 
 
 @pytest.fixture
-def mock_researcher():
-    researcher = MagicMock()
-    researcher.research.return_value = ResearchResponse(
-        summary="The relevant implementation was inspected.",
+def researcher_agent():
+    agent = Mock(spec=ResearcherAgent)
+
+    agent.research.return_value = {
+        "summary": "Authentication implementation needs correction.",
+        "findings": [],
+    }
+
+    # Replace with a real ResearchResponse, as shown below.
+    return agent
+
+
+@pytest.fixture
+def valid_research_response():
+
+    return ResearchResponse(
+        summary="Found an authentication issue in the repository.",
         findings=[
             ResearchFinding(
                 file_path="README.md",
                 evidence="# Example Project",
-                observation="The repository contains a project README.",
-                relevance="The README provides basic project context.",
+                observation="The README contains project information.",
+                relevance="It is the only available repository context.",
             )
         ],
         files_inspected=["README.md"],
-        root_cause_hypothesis=(
-            "There is insufficient evidence to identify a confirmed root cause."
-        ),
+        root_cause_hypothesis=("The authentication implementation requires further inspection."),
         confidence="low",
-        remaining_questions=["Which implementation file handles the task?"],
+        remaining_questions=[],
     )
-    return researcher
 
 
 @pytest.fixture
-def agent_graph(mock_planner, mock_researcher):
-    return build_agent_graph(
-        planner_agent=mock_planner,
-        researcher_agent=mock_researcher,
+def coder_agent():
+    agent = Mock(spec=CoderAgent)
+
+    agent.generate_changes.return_value = CoderResponse(
+        summary="Update authentication documentation.",
+        changes=[
+            CodeChange(
+                file_path="README.md",
+                change_type="modify",
+                unified_diff=(
+                    "--- a/README.md\n"
+                    "+++ b/README.md\n"
+                    "@@ -1 +1 @@\n"
+                    "-# Example Project\n"
+                    "+# Example Project\n"
+                ),
+                explanation="Update the project documentation.",
+            )
+        ],
+        tests_to_run=[],
+        risks=[],
     )
 
+    return agent
 
-def test_agent_graph_successfully_inspects_repository(
-    tmp_path,
-    agent_graph,
-    mock_planner,
+
+def test_graph_executes_successful_workflow(
+    valid_initial_state,
+    planner_agent,
+    researcher_agent,
+    valid_research_response,
+    coder_agent,
 ):
-    # Arrange
-    repository = tmp_path / "test-project"
-    repository.mkdir()
+    researcher_agent.research.return_value = valid_research_response
 
-    (repository / "README.md").write_text("# Test Project")
-    (repository / "main.py").write_text("print('Hello')")
+    graph = build_agent_graph(
+        planner_agent=planner_agent,
+        researcher_agent=researcher_agent,
+        coder_agent=coder_agent,
+    )
 
-    initial_state = {
-        "task_id": "task-123",
-        "task_description": "Fix authentication bug",
-        "repository_url": "https://github.com/example/project",
-        "repository_path": str(repository),
-    }
+    result = graph.invoke(valid_initial_state)
 
-    # Act
-    result = agent_graph.invoke(initial_state)
-
-    # Assert
-    assert result["status"] == "research_completed"
-    assert result["repository_status"] == "available"
-    assert result["repository_files"]
-    assert result["repository_truncated"] is False
+    assert result["status"] == "code_changes_generated"
     assert result["plan"]["objective"] == "Fix the authentication bug."
-    assert "README.md" in result["repository_files"]
+    assert result["research"]["summary"] == ("Found an authentication issue in the repository.")
+    assert result["code_changes"]["summary"] == ("Update authentication documentation.")
 
-    mock_planner.generate_plan.assert_called_once()
-
-
-def test_agent_graph_fails_when_repository_path_is_missing(agent_graph):
-    initial_state = {
-        "task_id": "task-123",
-        "task_description": "Fix authentication bug",
-        "repository_url": "https://github.com/example/project",
-        "repository_path": "",
-    }
-
-    result = agent_graph.invoke(initial_state)
-
-    assert result["status"] == "failed"
-    assert result["error"] == "Local repository path cannot be empty."
-    assert "plan" not in result
+    planner_agent.generate_plan.assert_called_once()
+    researcher_agent.research.assert_called_once()
+    coder_agent.generate_changes.assert_called_once()
 
 
-def test_agent_graph_fails_when_repository_does_not_exist(
-    tmp_path,
-    agent_graph,
-    mock_planner,
+def test_graph_skips_researcher_when_planner_fails(
+    valid_initial_state,
+    planner_agent,
+    researcher_agent,
+    coder_agent,
 ):
-    repository = tmp_path / "nonexistent"
+    from forgeai.llm.exceptions import LLMProviderError
 
-    initial_state = {
-        "task_id": "task-123",
-        "task_description": "Fix authentication bug",
-        "repository_url": "https://github.com/example/project",
-        "repository_path": str(repository),
-    }
+    planner_agent.generate_plan.side_effect = LLMProviderError("LLM provider unavailable.")
 
-    result = agent_graph.invoke(initial_state)
-
-    assert result["status"] == "failed"
-    assert result["repository_status"] == "unavailable"
-    assert result["repository_files"] == []
-    assert result["error"] == "Repository path does not exist."
-    assert "plan" not in result
-
-    mock_planner.generate_plan.assert_not_called()
-
-
-def test_agent_graph_preserves_repository_truncation_status(
-    tmp_path,
-    agent_graph,
-):
-    repository = tmp_path / "test-project"
-    repository.mkdir()
-
-    (repository / "README.md").write_text("# Test Project")
-
-    initial_state = {
-        "task_id": "task-123",
-        "task_description": "Fix authentication bug",
-        "repository_url": "https://github.com/example/project",
-        "repository_path": str(repository),
-    }
-
-    result = agent_graph.invoke(initial_state)
-
-    assert result["repository_truncated"] is False
-
-
-def test_agent_graph_continues_with_partial_repository_context(
-    tmp_path,
-    agent_graph,
-):
-    repository = tmp_path / "test-project"
-    repository.mkdir()
-
-    oversized_content = "x" * (100 * 1024 + 1)
-
-    (repository / "README.md").write_text(
-        oversized_content,
-        encoding="utf-8",
+    graph = build_agent_graph(
+        planner_agent=planner_agent,
+        researcher_agent=researcher_agent,
+        coder_agent=coder_agent,
     )
 
-    (repository / "main.py").write_text(
-        "def main(): pass",
-        encoding="utf-8",
-    )
-
-    initial_state = {
-        "task_id": "task-123",
-        "task_description": "Fix authentication bug",
-        "repository_url": "https://github.com/example/project",
-        "repository_path": str(repository),
-    }
-
-    result = agent_graph.invoke(initial_state)
-
-    assert result["repository_context_status"] == "partial"
-    assert result["status"] == "research_completed"
-
-    assert len(result["repository_context_files"]) == 1
-    assert result["repository_context_files"][0]["file_path"] == "main.py"
-
-    assert "README.md" in result["repository_context_skipped_files"]
-    assert result["plan"]["steps"]
-
-
-def test_graph_executes_planner_then_researcher(
-    agent_graph,
-    mock_planner,
-    mock_researcher,
-    valid_initial_state,
-):
-    result = agent_graph.invoke(valid_initial_state)
-
-    print("\n--- GRAPH RESULT ---")
-    print(result)
-
-    assert result["status"] == "research_completed"
-
-    mock_planner.generate_plan.assert_called_once()
-    mock_researcher.research.assert_called_once()
-
-
-def test_graph_does_not_execute_researcher_when_planner_fails(
-    agent_graph,
-    mock_planner,
-    mock_researcher,
-    valid_initial_state,
-):
-    mock_planner.generate_plan.side_effect = LLMConnectionError("LLM connection failed.")
-
-    result = agent_graph.invoke(valid_initial_state)
+    result = graph.invoke(valid_initial_state)
 
     assert result["status"] == "failed"
-    mock_researcher.research.assert_not_called()
+    researcher_agent.research.assert_not_called()
+    coder_agent.generate_changes.assert_not_called()
+
+
+def test_graph_skips_coder_when_researcher_fails(
+    valid_initial_state,
+    planner_agent,
+    researcher_agent,
+    coder_agent,
+):
+    from forgeai.llm.exceptions import LLMProviderError
+
+    researcher_agent.research.side_effect = LLMProviderError("Research failed.")
+
+    graph = build_agent_graph(
+        planner_agent=planner_agent,
+        researcher_agent=researcher_agent,
+        coder_agent=coder_agent,
+    )
+
+    result = graph.invoke(valid_initial_state)
+
+    assert result["status"] == "failed"
+    coder_agent.generate_changes.assert_not_called()

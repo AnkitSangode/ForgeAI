@@ -29,6 +29,9 @@ class ForgeAgentState(TypedDict):
     # Researcher output
     research: NotRequired[dict[str, Any]]
 
+    # Coder output
+    code_changes: NotRequired[dict[str, Any]]
+
     # Workflow status
     status: NotRequired[str]
     error: NotRequired[str]

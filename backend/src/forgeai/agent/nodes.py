@@ -1,5 +1,7 @@
+from forgeai.agent.coder import CoderAgent
 from forgeai.agent.planner import PlannerAgent
 from forgeai.agent.researcher import ResearcherAgent
+from forgeai.agent.researcher_schema import ResearchResponse
 from forgeai.agent.schemas import PlanResponse
 from forgeai.agent.state import ForgeAgentState
 from forgeai.llm.exceptions import LLMError
@@ -155,6 +157,59 @@ def create_researcher_node(researcher_agent: ResearcherAgent):
             }
 
     return researcher_node
+
+
+def create_coder_node(coder_agent: CoderAgent):
+    def coder_node(state: ForgeAgentState) -> dict:
+        if state.get("status") == "failed":
+            return {}
+
+        plan_data = state.get("plan")
+        if not plan_data:
+            return {
+                "status": "failed",
+                "error": "Coder cannot run because no plan is available.",
+            }
+
+        research_data = state.get("research")
+        if not research_data:
+            return {
+                "status": "failed",
+                "error": "Coder cannot run because no research is available.",
+            }
+
+        repository_context_files = state.get("repository_context_files", [])
+
+        if not repository_context_files:
+            return {
+                "status": "failed",
+                "error": "Coder cannot run because repository context is unavailable.",
+            }
+
+        try:
+            plan = PlanResponse.model_validate(plan_data)
+            research = ResearchResponse.model_validate(research_data)
+
+            code_changes = coder_agent.generate_changes(
+                task_description=state["task_description"],
+                plan=plan,
+                research=research,
+                repository_context_files=repository_context_files,
+            )
+
+            return {
+                "code_changes": code_changes.model_dump(mode="json"),
+                "status": "code_changes_generated",
+                "error": "",
+            }
+
+        except (LLMError, ValueError) as error:
+            return {
+                "status": "failed",
+                "error": str(error),
+            }
+
+    return coder_node
 
 
 def build_repository_context_node(state: ForgeAgentState) -> dict:
