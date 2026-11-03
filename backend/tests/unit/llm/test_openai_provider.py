@@ -278,15 +278,14 @@ def test_generate_normalizes_unexpected_exceptions(
             prompt="Investigate the authentication bug.",
         )
 
+
 def test_generate_does_not_normalize_programming_errors(
     settings,
     mock_llm,
 ):
     llm_instance, _ = mock_llm
 
-    llm_instance.invoke.side_effect = AttributeError(
-        "Unexpected attribute access."
-    )
+    llm_instance.invoke.side_effect = AttributeError("Unexpected attribute access.")
 
     provider = OpenAIProvider(settings)
 
