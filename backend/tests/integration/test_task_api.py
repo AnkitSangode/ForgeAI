@@ -2,7 +2,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from forgeai.domain import Task
+from forgeai.infrastructure.models import Task
 
 
 def test_create_task_persists_to_database(

@@ -19,6 +19,7 @@ class PatchApproval:
     status: ApprovalStatus
     approved_by: str | None
     decided_at: datetime | None
+    consumed_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if len(self.patch_sha256) != 64:

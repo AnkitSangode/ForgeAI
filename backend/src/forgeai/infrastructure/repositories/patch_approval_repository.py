@@ -3,12 +3,12 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from forgeai.domain.repositories.patch_approval_repository import (
-    PatchApprovalRepository,
-)
-from forgeai.execution.approval import (
+from forgeai.domain.patch_approval import (
     ApprovalStatus,
     PatchApproval,
+)
+from forgeai.domain.repositories.patch_approval_repository import (
+    PatchApprovalRepository,
 )
 from forgeai.infrastructure.models.patch_approval import (
     PatchApprovalModel,
@@ -29,6 +29,7 @@ class SQLAlchemyPatchApprovalRepository(PatchApprovalRepository):
             status=approval.status.value,
             approved_by=approval.approved_by,
             decided_at=approval.decided_at,
+            consumed_at=approval.consumed_at,
         )
 
         self.session.add(model)
@@ -68,6 +69,7 @@ class SQLAlchemyPatchApprovalRepository(PatchApprovalRepository):
         model.status = approval.status.value
         model.approved_by = approval.approved_by
         model.decided_at = approval.decided_at
+        model.consumed_at = approval.consumed_at
 
         self.session.flush()
 
@@ -82,4 +84,5 @@ class SQLAlchemyPatchApprovalRepository(PatchApprovalRepository):
             status=ApprovalStatus(model.status),
             approved_by=model.approved_by,
             decided_at=model.decided_at,
+            consumed_at=model.consumed_at,
         )

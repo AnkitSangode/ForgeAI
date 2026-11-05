@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from uuid import UUID
 
-from forgeai.execution.approval import PatchApproval
+from forgeai.domain.patch_approval import PatchApproval
 
 
 class PatchApprovalRepository(ABC):
