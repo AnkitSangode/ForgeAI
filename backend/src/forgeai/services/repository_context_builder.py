@@ -61,13 +61,18 @@ class RepositoryContextBuilder:
                 skipped_files.extend(file_paths[index:])
                 break
 
+            if result.sha256 is None:
+                skipped_files.append(file_path)
+                errors.append(f"{file_path}: File reader did not provide a SHA-256 snapshot.")
+                continue
+
             collected_files.append(
                 RepositoryFileContext(
                     file_path=result.file_path,
                     content=content,
+                    sha256=result.sha256,
                 )
             )
-
             total_bytes += content_bytes
 
         if not collected_files:

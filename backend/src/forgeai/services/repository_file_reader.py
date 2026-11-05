@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 
 from forgeai.services.repository_file_read_result import (
@@ -35,7 +36,6 @@ class RepositoryFileReader:
                 )
 
             candidate_path = repository_root / requested_path
-
             current_path = repository_root
 
             for part in requested_path.parts:
@@ -73,11 +73,13 @@ class RepositoryFileReader:
                 )
 
             content = content_bytes.decode("utf-8")
+            file_hash = hashlib.sha256(content_bytes).hexdigest()
 
             return RepositoryFileReadResult(
                 status="available",
                 file_path=requested_path.as_posix(),
                 content=content,
+                sha256=file_hash,
             )
 
         except FileNotFoundError:

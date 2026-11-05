@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     openai_timeout: float = Field(default=60.0, gt=0)
     openai_max_retries: int = Field(default=2, ge=0)
 
+    # E2B sandbox configuration
+    e2b_api_key: SecretStr | None = None
+    e2b_sandbox_timeout: int = Field(default=300, ge=60, le=3600)
+    e2b_template: str | None = None
+    e2b_workspace_root: str = "/workspace"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from forgeai.domain.task import Task
+from forgeai.infrastructure.models.task import Task
 from forgeai.infrastructure.repositories.task_repository import TaskRepository
 
 

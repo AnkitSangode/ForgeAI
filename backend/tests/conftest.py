@@ -9,8 +9,8 @@ from sqlalchemy import create_engine, delete
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
-from forgeai.domain import Task
 from forgeai.infrastructure.base import Base
+from forgeai.infrastructure.models import Task
 from forgeai.infrastructure.session import get_db
 from forgeai.main import app
 

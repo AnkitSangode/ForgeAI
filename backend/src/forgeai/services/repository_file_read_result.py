@@ -9,5 +9,6 @@ class RepositoryFileReadResult:
     status: Literal["available", "unavailable"]
     file_path: str
     content: str | None = None
+    sha256: str | None = None
     error: str | None = None
     truncated: bool = False

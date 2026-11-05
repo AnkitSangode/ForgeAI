@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from forgeai.domain.task import Task
+from forgeai.infrastructure.models.task import Task
 from forgeai.infrastructure.repositories.task_repository import TaskRepository
 
 

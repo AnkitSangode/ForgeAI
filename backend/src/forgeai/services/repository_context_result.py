@@ -8,6 +8,7 @@ class RepositoryFileContext:
 
     file_path: str
     content: str
+    sha256: str
 
 
 @dataclass(frozen=True)
