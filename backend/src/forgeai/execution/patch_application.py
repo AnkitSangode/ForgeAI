@@ -1,15 +1,14 @@
+
 import logging
 
 from forgeai.agent.coder_schema import CodeChange
 from forgeai.execution.application_result import PatchApplicationResult
 from forgeai.execution.exceptions import PatchApplicationError
-from forgeai.execution.file_integrity_verifier import (
-    FileIntegrityVerifier,
-)
+from forgeai.execution.file_integrity_verifier import FileIntegrityVerifier
+from forgeai.execution.git_change_verifier import GitChangeVerifier
+from forgeai.execution.git_state_collector import GitStateCollector
 from forgeai.execution.patch_validator import PatchValidator
-from forgeai.execution.post_application_verifier import (
-    PostApplicationVerifier,
-)
+from forgeai.execution.post_application_verifier import PostApplicationVerifier
 from forgeai.execution.sandbox.base import SandboxProvider, SandboxSession
 from forgeai.services.repository_context_result import RepositoryContextResult
 
@@ -28,12 +27,17 @@ class PatchApplicationService:
         patch_validator: PatchValidator,
         integrity_verifier: FileIntegrityVerifier,
         post_application_verifier: PostApplicationVerifier,
+        git_state_collector: GitStateCollector,
+        git_change_verifier: GitChangeVerifier,
     ) -> None:
         self.sandbox_provider = sandbox_provider
         self.patch_validator = patch_validator
         self.integrity_verifier = integrity_verifier
         self.post_application_verifier = post_application_verifier
+        self.git_state_collector = git_state_collector
+        self.git_change_verifier = git_change_verifier
 
+    
     def apply(
         self,
         session: SandboxSession,
@@ -44,41 +48,45 @@ class PatchApplicationService:
         """Validate, apply, and verify a patch inside the sandbox."""
 
         changed_files = [change.file_path for change in changes]
+        patch_cleanup_completed = False
 
         try:
-            # 1. Validate patch structure and authorized paths.
             self.patch_validator.validate(
                 changes=changes,
                 allowed_paths=allowed_paths,
             )
 
-            # 2. Verify original files haven't changed.
             self.integrity_verifier.verify(
                 session=session,
                 changes=changes,
                 repository_context=repository_context,
             )
 
-            # 3. Generate combined unified diff.
-            patch = self._build_patch(changes)
-
-            # 4. Verify Git repository.
             self._ensure_git_repository(session)
 
-            # 5. Write patch into sandbox.
+            baseline_state = self.git_state_collector.capture(session)
+
+            patch = self._build_patch(changes)
             self._write_patch(session, patch)
 
-            # 6. Check whether Git can apply it.
             self._check_patch(session)
-
-            # 7. Apply patch.
             self._apply_patch(session)
 
-            # 8. Verify resulting repository state.
             self.post_application_verifier.verify(
                 session=session,
                 changes=changes,
                 repository_context=repository_context,
+            )
+
+            self._cleanup_patch_file(session, strict=True)
+            patch_cleanup_completed = True
+
+            final_state = self.git_state_collector.capture(session)
+
+            self.git_change_verifier.verify(
+                baseline=baseline_state,
+                final_state=final_state,
+                expected_changes=changes,
             )
 
             return PatchApplicationResult(
@@ -88,10 +96,20 @@ class PatchApplicationService:
             )
 
         finally:
-            self._cleanup_patch_file(session)
+            if not patch_cleanup_completed:
+                self._cleanup_patch_file(session)
 
-    def _cleanup_patch_file(self, session: SandboxSession) -> None:
-        """Best-effort cleanup of the temporary patch file."""
+
+    def _cleanup_patch_file(
+        self,
+        session: SandboxSession,
+        strict: bool = False,
+    ) -> None:
+        """Remove the temporary patch file.
+
+        Strict mode prevents successful execution from being reported
+        when cleanup fails. The finally block can still retry cleanup.
+        """
 
         try:
             if self.sandbox_provider.file_exists(
@@ -103,6 +121,11 @@ class PatchApplicationService:
                     self.PATCH_FILE_PATH,
                 )
         except (FileNotFoundError, PermissionError, OSError) as exc:
+            if strict:
+                raise PatchApplicationError(
+                    "Failed to clean up the temporary patch file."
+                ) from exc
+
             logger.warning(
                 "Failed to clean up temporary patch file '%s': %s",
                 self.PATCH_FILE_PATH,
@@ -115,9 +138,14 @@ class PatchApplicationService:
         """Combine individual unified diffs into one patch."""
 
         if not changes:
-            raise PatchApplicationError("Cannot build a patch without code changes.")
+            raise PatchApplicationError(
+                "Cannot build a patch without code changes."
+            )
 
-        patch_parts = [change.unified_diff.rstrip("\n") for change in changes]
+        patch_parts = [
+            change.unified_diff.rstrip("\n")
+            for change in changes
+        ]
 
         return "\n".join(patch_parts) + "\n"
 
@@ -131,7 +159,9 @@ class PatchApplicationService:
         )
 
         if result.exit_code != 0 or result.stdout.strip() != "true":
-            raise PatchApplicationError("Sandbox workspace is not a valid Git repository.")
+            raise PatchApplicationError(
+                "Sandbox workspace is not a valid Git repository."
+            )
 
     def _write_patch(
         self,
@@ -147,9 +177,13 @@ class PatchApplicationService:
                 content=patch,
             )
         except FileExistsError as exc:
-            raise PatchApplicationError("A patch file already exists in the sandbox.") from exc
+            raise PatchApplicationError(
+                "A patch file already exists in the sandbox."
+            ) from exc
         except Exception as exc:
-            raise PatchApplicationError("Failed to write the patch into the sandbox.") from exc
+            raise PatchApplicationError(
+                "Failed to write the patch into the sandbox."
+            ) from exc
 
     def _check_patch(self, session: SandboxSession) -> None:
         """Check whether Git can apply the patch without modifying files."""
@@ -161,7 +195,9 @@ class PatchApplicationService:
         )
 
         if result.exit_code != 0:
-            raise PatchApplicationError(f"Patch validation by Git failed: {result.stderr}")
+            raise PatchApplicationError(
+                f"Patch validation by Git failed: {result.stderr}"
+            )
 
     def _apply_patch(self, session: SandboxSession) -> None:
         """Apply the validated patch inside the sandbox."""
@@ -173,4 +209,6 @@ class PatchApplicationService:
         )
 
         if result.exit_code != 0:
-            raise PatchApplicationError(f"Git failed to apply the patch: {result.stderr}")
+            raise PatchApplicationError(
+                f"Git failed to apply the patch: {result.stderr}"
+            )

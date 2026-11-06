@@ -12,6 +12,16 @@ from forgeai.execution.sandbox.base import CommandExecutionResult, SandboxSessio
 
 
 @pytest.fixture
+def git_state_collector():
+    return Mock()
+
+
+@pytest.fixture
+def git_change_verifier():
+    return Mock()
+
+
+@pytest.fixture
 def sandbox_session():
     return SandboxSession(
         sandbox_id="test-sandbox",
@@ -45,12 +55,16 @@ def service(
     patch_validator,
     integrity_verifier,
     post_application_verifier,
+    git_state_collector,
+    git_change_verifier,
 ):
     return PatchApplicationService(
         sandbox_provider=sandbox_provider,
         patch_validator=patch_validator,
         integrity_verifier=integrity_verifier,
         post_application_verifier=post_application_verifier,
+        git_state_collector=git_state_collector,
+        git_change_verifier=git_change_verifier,
     )
 
 
@@ -112,7 +126,9 @@ def test_unauthorized_path_is_rejected(
     repository_context,
     allowed_paths,
 ):
-    patch_validator.validate.side_effect = PatchValidationError("Patch target is not authorized.")
+    patch_validator.validate.side_effect = PatchValidationError(
+        "Patch target is not authorized."
+    )
 
     with pytest.raises(PatchValidationError):
         service.apply(
@@ -133,7 +149,9 @@ def test_invalid_unified_diff_is_rejected(
     repository_context,
     allowed_paths,
 ):
-    patch_validator.validate.side_effect = PatchValidationError("Unified diff contains no hunks.")
+    patch_validator.validate.side_effect = PatchValidationError(
+        "Unified diff contains no hunks."
+    )
 
     with pytest.raises(PatchValidationError):
         service.apply(
@@ -240,7 +258,9 @@ def test_build_patch_combines_multiple_file_diffs():
     changes = [
         Mock(
             file_path="src/auth.py",
-            unified_diff=("--- a/src/auth.py\n+++ b/src/auth.py\n@@ -1 +1 @@\n-old\n+new\n"),
+            unified_diff=(
+                "--- a/src/auth.py\n+++ b/src/auth.py\n@@ -1 +1 @@\n-old\n+new\n"
+            ),
         ),
         Mock(
             file_path="src/database.py",
@@ -500,7 +520,9 @@ def test_apply_stops_when_integrity_verification_fails(
     repository_context,
     allowed_paths,
 ):
-    integrity_verifier.verify.side_effect = FileIntegrityError("Original file has changed.")
+    integrity_verifier.verify.side_effect = FileIntegrityError(
+        "Original file has changed."
+    )
 
     with pytest.raises(FileIntegrityError):
         service.apply(
@@ -642,3 +664,146 @@ def test_apply_fails_when_post_application_verification_fails(
         sandbox_session,
         service.PATCH_FILE_PATH,
     )
+
+
+def test_apply_captures_baseline_and_final_git_state(
+    service,
+    git_state_collector,
+    git_change_verifier,
+    sandbox_provider,
+    sandbox_session,
+    changes,
+    repository_context,
+    allowed_paths,
+):
+    sandbox_provider.run_command.side_effect = [
+        CommandExecutionResult(
+            command="git rev-parse --is-inside-work-tree",
+            exit_code=0,
+            stdout="true\n",
+            stderr="",
+        ),
+        CommandExecutionResult(
+            command="git apply --check .forgeai-current.patch",
+            exit_code=0,
+            stdout="",
+            stderr="",
+        ),
+        CommandExecutionResult(
+            command="git apply .forgeai-current.patch",
+            exit_code=0,
+            stdout="",
+            stderr="",
+        ),
+    ]
+
+    sandbox_provider.file_exists.return_value = True
+
+    service.apply(
+        session=sandbox_session,
+        changes=changes,
+        allowed_paths=allowed_paths,
+        repository_context=repository_context,
+    )
+
+    assert git_state_collector.capture.call_count == 2
+
+    git_change_verifier.verify.assert_called_once_with(
+        baseline=git_state_collector.capture.return_value,
+        final_state=git_state_collector.capture.return_value,
+        expected_changes=changes,
+    )
+
+
+def test_apply_fails_when_unexpected_repository_changes_are_detected(
+    service,
+    git_change_verifier,
+    sandbox_provider,
+    sandbox_session,
+    changes,
+    repository_context,
+    allowed_paths,
+):
+    sandbox_provider.run_command.side_effect = [
+        CommandExecutionResult(
+            command="git rev-parse --is-inside-work-tree",
+            exit_code=0,
+            stdout="true\n",
+            stderr="",
+        ),
+        CommandExecutionResult(
+            command="git apply --check .forgeai-current.patch",
+            exit_code=0,
+            stdout="",
+            stderr="",
+        ),
+        CommandExecutionResult(
+            command="git apply .forgeai-current.patch",
+            exit_code=0,
+            stdout="",
+            stderr="",
+        ),
+    ]
+
+    sandbox_provider.file_exists.return_value = True
+
+    git_change_verifier.verify.side_effect = PatchApplicationError(
+        "Execution modified files outside the authorized patch."
+    )
+
+    with pytest.raises(PatchApplicationError):
+        service.apply(
+            session=sandbox_session,
+            changes=changes,
+            allowed_paths=allowed_paths,
+            repository_context=repository_context,
+        )
+
+    sandbox_provider.delete_file.assert_called_once_with(
+        sandbox_session,
+        service.PATCH_FILE_PATH,
+    )
+
+
+def test_apply_does_not_report_success_when_patch_cleanup_fails(
+    service,
+    sandbox_provider,
+    sandbox_session,
+    changes,
+    repository_context,
+    allowed_paths,
+):
+    sandbox_provider.run_command.side_effect = [
+        CommandExecutionResult(
+            command="git rev-parse --is-inside-work-tree",
+            exit_code=0,
+            stdout="true\n",
+            stderr="",
+        ),
+        CommandExecutionResult(
+            command="git apply --check .forgeai-current.patch",
+            exit_code=0,
+            stdout="",
+            stderr="",
+        ),
+        CommandExecutionResult(
+            command="git apply .forgeai-current.patch",
+            exit_code=0,
+            stdout="",
+            stderr="",
+        ),
+    ]
+
+    sandbox_provider.file_exists.return_value = True
+    sandbox_provider.delete_file.side_effect = PermissionError("Permission denied")
+
+    with pytest.raises(
+        PatchApplicationError,
+        match="Failed to clean up",
+    ):
+        service.apply(
+            session=sandbox_session,
+            changes=changes,
+            allowed_paths=allowed_paths,
+            repository_context=repository_context,
+        )
