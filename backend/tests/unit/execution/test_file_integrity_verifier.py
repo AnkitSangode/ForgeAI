@@ -71,7 +71,10 @@ def test_modify_passes_when_hash_matches(verifier, sandbox_provider, session, re
 
     verifier.verify(session, [change], repository_context)
 
-    sandbox_provider.read_file.assert_called_once_with(session, "src/auth.py")
+    sandbox_provider.read_file.assert_called_once_with(
+    session,
+    "repository/src/auth.py",
+    )
 
 
 def test_modify_fails_when_hash_differs(verifier, sandbox_provider, session, repository_context):

@@ -1,3 +1,4 @@
+
 from typing import Any, NotRequired, TypedDict
 
 
@@ -23,6 +24,15 @@ class ForgeAgentState(TypedDict):
     repository_files: NotRequired[list[str]]
     repository_truncated: NotRequired[bool]
 
+    # Repository metadata
+    repository_name: NotRequired[str]
+    repository_remote_url: NotRequired[str]
+    repository_commit_sha: NotRequired[str]
+
+    # Sandbox information
+    sandbox_id: NotRequired[str]
+    sandbox_session: NotRequired[Any]
+
     # Planner output
     plan: NotRequired[dict[str, Any]]
 
@@ -31,6 +41,11 @@ class ForgeAgentState(TypedDict):
 
     # Coder output
     code_changes: NotRequired[dict[str, Any]]
+
+    # Reviewer output
+    review: NotRequired[dict[str, Any]]
+    review_feedback: NotRequired[str]
+    review_attempts: NotRequired[int]
 
     # Workflow status
     status: NotRequired[str]

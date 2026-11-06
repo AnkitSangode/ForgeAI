@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 
+from forgeai.api.approvals import router as approvals_router
+from forgeai.api.auth import router as auth_router
 from forgeai.api.health import router as health_router
 from forgeai.api.tasks import router as tasks_router
 from forgeai.core.config import get_settings
@@ -13,6 +15,8 @@ app = FastAPI(
 
 app.include_router(health_router)
 app.include_router(tasks_router)
+app.include_router(auth_router)
+app.include_router(approvals_router)
 
 
 @app.get("/")

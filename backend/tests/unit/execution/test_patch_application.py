@@ -1,3 +1,4 @@
+
 from unittest.mock import Mock
 
 import pytest
@@ -8,7 +9,11 @@ from forgeai.execution.exceptions import (
     PatchValidationError,
 )
 from forgeai.execution.patch_application import PatchApplicationService
-from forgeai.execution.sandbox.base import CommandExecutionResult, SandboxSession
+from forgeai.execution.repository_paths import REPOSITORY_ROOT
+from forgeai.execution.sandbox.base import (
+    CommandExecutionResult,
+    SandboxSession,
+)
 
 
 @pytest.fixture
@@ -93,6 +98,41 @@ def repository_context():
 @pytest.fixture
 def allowed_paths():
     return {"src/auth.py"}
+
+
+def make_command_result(
+    command: str,
+    exit_code: int = 0,
+    stdout: str = "",
+    stderr: str = "",
+):
+    return CommandExecutionResult(
+        command=command,
+        exit_code=exit_code,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
+@pytest.fixture
+def successful_git_commands():
+    return [
+        make_command_result(
+            "git -C repository rev-parse --is-inside-work-tree",
+            stdout="true\n",
+        ),
+        make_command_result(
+            "git -C repository apply --check ../.forgeai-current.patch",
+        ),
+        make_command_result(
+            "git -C repository apply ../.forgeai-current.patch",
+        ),
+    ]
+
+
+# ---------------------------------------------------------
+# Validation and integrity
+# ---------------------------------------------------------
 
 
 def test_empty_changes_are_rejected(
@@ -207,6 +247,11 @@ def test_missing_original_file_is_rejected(
         )
 
 
+# ---------------------------------------------------------
+# Successful execution
+# ---------------------------------------------------------
+
+
 def test_valid_patch_passes_validation_and_integrity_checks(
     service,
     sandbox_provider,
@@ -214,28 +259,9 @@ def test_valid_patch_passes_validation_and_integrity_checks(
     changes,
     repository_context,
     allowed_paths,
+    successful_git_commands,
 ):
-    sandbox_provider.run_command.side_effect = [
-        CommandExecutionResult(
-            command="git rev-parse --is-inside-work-tree",
-            exit_code=0,
-            stdout="true\n",
-            stderr="",
-        ),
-        CommandExecutionResult(
-            command="git apply --check .forgeai-current.patch",
-            exit_code=0,
-            stdout="",
-            stderr="",
-        ),
-        CommandExecutionResult(
-            command="git apply .forgeai-current.patch",
-            exit_code=0,
-            stdout="",
-            stderr="",
-        ),
-    ]
-
+    sandbox_provider.run_command.side_effect = successful_git_commands
     sandbox_provider.file_exists.return_value = True
 
     result = service.apply(
@@ -250,8 +276,45 @@ def test_valid_patch_passes_validation_and_integrity_checks(
 
     service.patch_validator.validate.assert_called_once()
     service.integrity_verifier.verify.assert_called_once()
+    service.post_application_verifier.verify.assert_called_once()
+
     sandbox_provider.create_file.assert_called_once()
     sandbox_provider.delete_file.assert_called_once()
+
+
+def test_apply_executes_complete_pipeline(
+    service,
+    sandbox_provider,
+    patch_validator,
+    integrity_verifier,
+    sandbox_session,
+    changes,
+    repository_context,
+    allowed_paths,
+    successful_git_commands,
+):
+    sandbox_provider.run_command.side_effect = successful_git_commands
+    sandbox_provider.file_exists.return_value = True
+
+    result = service.apply(
+        session=sandbox_session,
+        changes=changes,
+        allowed_paths=allowed_paths,
+        repository_context=repository_context,
+    )
+
+    assert result.success is True
+    assert result.changed_files == ["src/auth.py"]
+
+    patch_validator.validate.assert_called_once()
+    integrity_verifier.verify.assert_called_once()
+    sandbox_provider.create_file.assert_called_once()
+    sandbox_provider.delete_file.assert_called_once()
+
+
+# ---------------------------------------------------------
+# Patch construction
+# ---------------------------------------------------------
 
 
 def test_build_patch_combines_multiple_file_diffs():
@@ -259,13 +322,21 @@ def test_build_patch_combines_multiple_file_diffs():
         Mock(
             file_path="src/auth.py",
             unified_diff=(
-                "--- a/src/auth.py\n+++ b/src/auth.py\n@@ -1 +1 @@\n-old\n+new\n"
+                "--- a/src/auth.py\n"
+                "+++ b/src/auth.py\n"
+                "@@ -1 +1 @@\n"
+                "-old\n"
+                "+new\n"
             ),
         ),
         Mock(
             file_path="src/database.py",
             unified_diff=(
-                "--- a/src/database.py\n+++ b/src/database.py\n@@ -1 +1 @@\n-old_db\n+new_db\n"
+                "--- a/src/database.py\n"
+                "+++ b/src/database.py\n"
+                "@@ -1 +1 @@\n"
+                "-old_db\n"
+                "+new_db\n"
             ),
         ),
     ]
@@ -280,10 +351,13 @@ def test_build_patch_combines_multiple_file_diffs():
 
 
 def test_build_patch_rejects_empty_changes():
-    from forgeai.execution.exceptions import PatchApplicationError
-
     with pytest.raises(PatchApplicationError):
         PatchApplicationService._build_patch([])
+
+
+# ---------------------------------------------------------
+# Git repository validation
+# ---------------------------------------------------------
 
 
 def test_ensure_git_repository_accepts_valid_repository(
@@ -291,18 +365,16 @@ def test_ensure_git_repository_accepts_valid_repository(
     sandbox_provider,
     sandbox_session,
 ):
-    sandbox_provider.run_command.return_value = CommandExecutionResult(
-        command="git rev-parse --is-inside-work-tree",
-        exit_code=0,
+    sandbox_provider.run_command.return_value = make_command_result(
+        "git -C repository rev-parse --is-inside-work-tree",
         stdout="true\n",
-        stderr="",
     )
 
     service._ensure_git_repository(sandbox_session)
 
     sandbox_provider.run_command.assert_called_once_with(
         session=sandbox_session,
-        command="git rev-parse --is-inside-work-tree",
+        command="git -C repository rev-parse --is-inside-work-tree",
         timeout_seconds=30,
     )
 
@@ -312,15 +384,38 @@ def test_ensure_git_repository_rejects_invalid_repository(
     sandbox_provider,
     sandbox_session,
 ):
-    sandbox_provider.run_command.return_value = CommandExecutionResult(
-        command="git rev-parse --is-inside-work-tree",
+    sandbox_provider.run_command.return_value = make_command_result(
+        "git -C repository rev-parse --is-inside-work-tree",
         exit_code=128,
-        stdout="",
         stderr="fatal: not a git repository",
     )
 
     with pytest.raises(PatchApplicationError):
         service._ensure_git_repository(sandbox_session)
+
+
+def test_git_commands_target_cloned_repository(
+    service,
+    sandbox_provider,
+    sandbox_session,
+):
+    sandbox_provider.run_command.return_value = make_command_result(
+        "",
+        stdout="true\n",
+    )
+
+    service._ensure_git_repository(sandbox_session)
+
+    command = sandbox_provider.run_command.call_args.kwargs["command"]
+
+    assert command == (
+        f"git -C {REPOSITORY_ROOT} rev-parse --is-inside-work-tree"
+    )
+
+
+# ---------------------------------------------------------
+# Patch file creation and cleanup
+# ---------------------------------------------------------
 
 
 def test_write_patch_creates_patch_file(
@@ -353,23 +448,28 @@ def test_write_patch_rejects_existing_patch_file(
         )
 
 
+# ---------------------------------------------------------
+# Git patch validation
+# ---------------------------------------------------------
+
+
 def test_check_patch_succeeds(
     service,
     sandbox_provider,
     sandbox_session,
 ):
-    sandbox_provider.run_command.return_value = CommandExecutionResult(
-        command="git apply --check .forgeai-current.patch",
-        exit_code=0,
-        stdout="",
-        stderr="",
+    sandbox_provider.run_command.return_value = make_command_result(
+        "git -C repository apply --check ../.forgeai-current.patch",
     )
 
     service._check_patch(sandbox_session)
 
     sandbox_provider.run_command.assert_called_once_with(
         session=sandbox_session,
-        command="git apply --check .forgeai-current.patch",
+        command=(
+            "git -C repository "
+            "apply --check ../.forgeai-current.patch"
+        ),
         timeout_seconds=30,
     )
 
@@ -379,10 +479,9 @@ def test_check_patch_fails(
     sandbox_provider,
     sandbox_session,
 ):
-    sandbox_provider.run_command.return_value = CommandExecutionResult(
-        command="git apply --check .forgeai-current.patch",
+    sandbox_provider.run_command.return_value = make_command_result(
+        "git -C repository apply --check ../.forgeai-current.patch",
         exit_code=1,
-        stdout="",
         stderr="error: patch does not apply",
     )
 
@@ -395,23 +494,28 @@ def test_check_patch_fails(
     sandbox_provider.run_command.assert_called_once()
 
 
+# ---------------------------------------------------------
+# Git patch application
+# ---------------------------------------------------------
+
+
 def test_apply_patch_succeeds(
     service,
     sandbox_provider,
     sandbox_session,
 ):
-    sandbox_provider.run_command.return_value = CommandExecutionResult(
-        command="git apply .forgeai-current.patch",
-        exit_code=0,
-        stdout="",
-        stderr="",
+    sandbox_provider.run_command.return_value = make_command_result(
+        "git -C repository apply ../.forgeai-current.patch",
     )
 
     service._apply_patch(sandbox_session)
 
     sandbox_provider.run_command.assert_called_once_with(
         session=sandbox_session,
-        command="git apply .forgeai-current.patch",
+        command=(
+            "git -C repository "
+            "apply ../.forgeai-current.patch"
+        ),
         timeout_seconds=30,
     )
 
@@ -421,10 +525,9 @@ def test_apply_patch_fails(
     sandbox_provider,
     sandbox_session,
 ):
-    sandbox_provider.run_command.return_value = CommandExecutionResult(
-        command="git apply .forgeai-current.patch",
+    sandbox_provider.run_command.return_value = make_command_result(
+        "git -C repository apply ../.forgeai-current.patch",
         exit_code=1,
-        stdout="",
         stderr="error: patch failed",
     )
 
@@ -437,53 +540,9 @@ def test_apply_patch_fails(
     sandbox_provider.run_command.assert_called_once()
 
 
-def test_apply_executes_complete_pipeline(
-    service,
-    sandbox_provider,
-    patch_validator,
-    integrity_verifier,
-    sandbox_session,
-    changes,
-    repository_context,
-    allowed_paths,
-):
-    sandbox_provider.run_command.side_effect = [
-        CommandExecutionResult(
-            command="git rev-parse --is-inside-work-tree",
-            exit_code=0,
-            stdout="true\n",
-            stderr="",
-        ),
-        CommandExecutionResult(
-            command="git apply --check .forgeai-current.patch",
-            exit_code=0,
-            stdout="",
-            stderr="",
-        ),
-        CommandExecutionResult(
-            command="git apply .forgeai-current.patch",
-            exit_code=0,
-            stdout="",
-            stderr="",
-        ),
-    ]
-
-    sandbox_provider.file_exists.return_value = True
-
-    result = service.apply(
-        session=sandbox_session,
-        changes=changes,
-        allowed_paths=allowed_paths,
-        repository_context=repository_context,
-    )
-
-    assert result.success is True
-    assert result.changed_files == ["src/auth.py"]
-
-    patch_validator.validate.assert_called_once()
-    integrity_verifier.verify.assert_called_once()
-    sandbox_provider.create_file.assert_called_once()
-    sandbox_provider.delete_file.assert_called_once()
+# ---------------------------------------------------------
+# Pipeline failure handling
+# ---------------------------------------------------------
 
 
 def test_apply_stops_when_validation_fails(
@@ -496,7 +555,9 @@ def test_apply_stops_when_validation_fails(
     repository_context,
     allowed_paths,
 ):
-    patch_validator.validate.side_effect = PatchValidationError("Invalid patch.")
+    patch_validator.validate.side_effect = PatchValidationError(
+        "Invalid patch."
+    )
 
     with pytest.raises(PatchValidationError):
         service.apply(
@@ -545,16 +606,13 @@ def test_apply_does_not_apply_patch_when_git_check_fails(
     allowed_paths,
 ):
     sandbox_provider.run_command.side_effect = [
-        CommandExecutionResult(
-            command="git rev-parse --is-inside-work-tree",
-            exit_code=0,
+        make_command_result(
+            "git -C repository rev-parse --is-inside-work-tree",
             stdout="true\n",
-            stderr="",
         ),
-        CommandExecutionResult(
-            command="git apply --check .forgeai-current.patch",
+        make_command_result(
+            "git -C repository apply --check ../.forgeai-current.patch",
             exit_code=1,
-            stdout="",
             stderr="Patch conflict.",
         ),
     ]
@@ -570,7 +628,6 @@ def test_apply_does_not_apply_patch_when_git_check_fails(
         )
 
     assert sandbox_provider.run_command.call_count == 2
-
     sandbox_provider.delete_file.assert_called_once()
 
 
@@ -583,22 +640,16 @@ def test_apply_cleans_up_patch_after_execution_failure(
     allowed_paths,
 ):
     sandbox_provider.run_command.side_effect = [
-        CommandExecutionResult(
-            command="git rev-parse --is-inside-work-tree",
-            exit_code=0,
+        make_command_result(
+            "git -C repository rev-parse --is-inside-work-tree",
             stdout="true\n",
-            stderr="",
         ),
-        CommandExecutionResult(
-            command="git apply --check .forgeai-current.patch",
-            exit_code=0,
-            stdout="",
-            stderr="",
+        make_command_result(
+            "git -C repository apply --check ../.forgeai-current.patch",
         ),
-        CommandExecutionResult(
-            command="git apply .forgeai-current.patch",
+        make_command_result(
+            "git -C repository apply ../.forgeai-current.patch",
             exit_code=1,
-            stdout="",
             stderr="Application failed.",
         ),
     ]
@@ -629,23 +680,15 @@ def test_apply_fails_when_post_application_verification_fails(
     )
 
     sandbox_provider.run_command.side_effect = [
-        CommandExecutionResult(
-            command="git rev-parse --is-inside-work-tree",
-            exit_code=0,
-            stdout="true",
-            stderr="",
+        make_command_result(
+            "git -C repository rev-parse --is-inside-work-tree",
+            stdout="true\n",
         ),
-        CommandExecutionResult(
-            command="git apply --check .forgeai-current.patch",
-            exit_code=0,
-            stdout="",
-            stderr="",
+        make_command_result(
+            "git -C repository apply --check ../.forgeai-current.patch",
         ),
-        CommandExecutionResult(
-            command="git apply .forgeai-current.patch",
-            exit_code=0,
-            stdout="",
-            stderr="",
+        make_command_result(
+            "git -C repository apply ../.forgeai-current.patch",
         ),
     ]
 
@@ -660,10 +703,16 @@ def test_apply_fails_when_post_application_verification_fails(
         )
 
     post_application_verifier.verify.assert_called_once()
+
     sandbox_provider.delete_file.assert_called_once_with(
         sandbox_session,
         service.PATCH_FILE_PATH,
     )
+
+
+# ---------------------------------------------------------
+# Git state verification
+# ---------------------------------------------------------
 
 
 def test_apply_captures_baseline_and_final_git_state(
@@ -675,28 +724,9 @@ def test_apply_captures_baseline_and_final_git_state(
     changes,
     repository_context,
     allowed_paths,
+    successful_git_commands,
 ):
-    sandbox_provider.run_command.side_effect = [
-        CommandExecutionResult(
-            command="git rev-parse --is-inside-work-tree",
-            exit_code=0,
-            stdout="true\n",
-            stderr="",
-        ),
-        CommandExecutionResult(
-            command="git apply --check .forgeai-current.patch",
-            exit_code=0,
-            stdout="",
-            stderr="",
-        ),
-        CommandExecutionResult(
-            command="git apply .forgeai-current.patch",
-            exit_code=0,
-            stdout="",
-            stderr="",
-        ),
-    ]
-
+    sandbox_provider.run_command.side_effect = successful_git_commands
     sandbox_provider.file_exists.return_value = True
 
     service.apply(
@@ -723,28 +753,9 @@ def test_apply_fails_when_unexpected_repository_changes_are_detected(
     changes,
     repository_context,
     allowed_paths,
+    successful_git_commands,
 ):
-    sandbox_provider.run_command.side_effect = [
-        CommandExecutionResult(
-            command="git rev-parse --is-inside-work-tree",
-            exit_code=0,
-            stdout="true\n",
-            stderr="",
-        ),
-        CommandExecutionResult(
-            command="git apply --check .forgeai-current.patch",
-            exit_code=0,
-            stdout="",
-            stderr="",
-        ),
-        CommandExecutionResult(
-            command="git apply .forgeai-current.patch",
-            exit_code=0,
-            stdout="",
-            stderr="",
-        ),
-    ]
-
+    sandbox_provider.run_command.side_effect = successful_git_commands
     sandbox_provider.file_exists.return_value = True
 
     git_change_verifier.verify.side_effect = PatchApplicationError(
@@ -765,6 +776,11 @@ def test_apply_fails_when_unexpected_repository_changes_are_detected(
     )
 
 
+# ---------------------------------------------------------
+# Cleanup failure handling
+# ---------------------------------------------------------
+
+
 def test_apply_does_not_report_success_when_patch_cleanup_fails(
     service,
     sandbox_provider,
@@ -772,30 +788,13 @@ def test_apply_does_not_report_success_when_patch_cleanup_fails(
     changes,
     repository_context,
     allowed_paths,
+    successful_git_commands,
 ):
-    sandbox_provider.run_command.side_effect = [
-        CommandExecutionResult(
-            command="git rev-parse --is-inside-work-tree",
-            exit_code=0,
-            stdout="true\n",
-            stderr="",
-        ),
-        CommandExecutionResult(
-            command="git apply --check .forgeai-current.patch",
-            exit_code=0,
-            stdout="",
-            stderr="",
-        ),
-        CommandExecutionResult(
-            command="git apply .forgeai-current.patch",
-            exit_code=0,
-            stdout="",
-            stderr="",
-        ),
-    ]
-
+    sandbox_provider.run_command.side_effect = successful_git_commands
     sandbox_provider.file_exists.return_value = True
-    sandbox_provider.delete_file.side_effect = PermissionError("Permission denied")
+    sandbox_provider.delete_file.side_effect = PermissionError(
+        "Permission denied"
+    )
 
     with pytest.raises(
         PatchApplicationError,

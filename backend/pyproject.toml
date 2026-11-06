@@ -1,4 +1,5 @@
 
+
 [project]
 name = "forgeai-backend"
 version = "0.1.0"
@@ -15,6 +16,9 @@ dependencies = [
     "langgraph>=1.2.18",
     "langchain-openai>=1.7.3",
     "e2b>=2.62.1",
+    "pwdlib[argon2]>=0.3.1",
+    "pyjwt>=2.15.1",
+    "email-validator>=2.3.0",
 ]
 
 [dependency-groups]
@@ -33,8 +37,11 @@ packages = ["src/forgeai"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
-addopts = "-ra"
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+markers = [
+    "integration: tests that require external services or infrastructure",
+]
 
 [tool.ruff]
 line-length = 100

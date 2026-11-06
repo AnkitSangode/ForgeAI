@@ -1,5 +1,4 @@
-
-from unittest.mock import Mock, call
+from unittest.mock import Mock
 
 import pytest
 
@@ -106,8 +105,8 @@ def test_approval_consumption_failure_prevents_patch_application(
     session,
     repository_context,
 ):
-    approval_service.consume_approval.side_effect = (
-        ApprovalConsumptionError("Approval cannot authorize this execution.")
+    approval_service.consume_approval.side_effect = ApprovalConsumptionError(
+        "Approval cannot authorize this execution."
     )
 
     with pytest.raises(ApprovalConsumptionError):
@@ -131,9 +130,7 @@ def test_patch_application_failure_propagates(
     session,
     repository_context,
 ):
-    patch_application_service.apply.side_effect = RuntimeError(
-        "Sandbox execution failed."
-    )
+    patch_application_service.apply.side_effect = RuntimeError("Sandbox execution failed.")
 
     with pytest.raises(RuntimeError, match="Sandbox execution failed"):
         execution_service.execute(
@@ -184,11 +181,11 @@ def test_approval_is_consumed_before_patch_application(
 ):
     execution_order = []
 
-    approval_service.consume_approval.side_effect = (
-        lambda **kwargs: execution_order.append("approval_consumed")
+    approval_service.consume_approval.side_effect = lambda **kwargs: execution_order.append(
+        "approval_consumed"
     )
-    patch_application_service.apply.side_effect = (
-        lambda **kwargs: execution_order.append("patch_applied")
+    patch_application_service.apply.side_effect = lambda **kwargs: execution_order.append(
+        "patch_applied"
     )
 
     execution_service.execute(

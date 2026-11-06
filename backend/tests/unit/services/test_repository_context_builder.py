@@ -105,3 +105,51 @@ def test_build_context_returns_unavailable_when_no_files_are_readable(tmp_path):
     assert result.status == "unavailable"
     assert result.files == []
     assert result.total_bytes == 0
+
+
+def test_context_builder_works_with_session_bound_reader():
+    from unittest.mock import Mock
+    import hashlib
+
+    from forgeai.execution.sandbox.base import SandboxSession
+    from forgeai.services.repository_context_builder import (
+        RepositoryContextBuilder,
+    )
+    from forgeai.services.repository_file_read_result import (
+        RepositoryFileReadResult,
+    )
+    from forgeai.services.session_bound_repository_file_reader import (
+        SessionBoundRepositoryFileReader,
+    )
+
+    content = "def authenticate():\n    return True\n"
+
+    sandbox_reader = Mock()
+    sandbox_reader.read.return_value = RepositoryFileReadResult(
+        status="available",
+        file_path="src/auth.py",
+        content=content,
+        sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+    )
+
+    session = SandboxSession(
+        sandbox_id="test-sandbox",
+        _handle=object(),
+    )
+
+    adapter = SessionBoundRepositoryFileReader(
+        sandbox_reader=sandbox_reader,
+        session=session,
+    )
+
+    builder = RepositoryContextBuilder(file_reader=adapter)
+
+    result = builder.build(
+        repository_path="repository",
+        file_paths=["src/auth.py"],
+    )
+
+    assert result.status == "available"
+    assert len(result.files) == 1
+    assert result.files[0].file_path == "src/auth.py"
+    assert result.files[0].content == content

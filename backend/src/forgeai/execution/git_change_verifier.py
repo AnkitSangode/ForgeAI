@@ -13,10 +13,10 @@ class GitChangeVerifier:
         final_state: GitRepositoryState,
         expected_changes: list[CodeChange],
     ) -> None:
-        expected_paths = [change.file_path for change in expected_changes]
-
-        if not expected_paths:
+        if not expected_changes:
             raise PatchApplicationError("No expected changes were provided.")
+
+        expected_paths = [change.file_path for change in expected_changes]
 
         if len(expected_paths) != len(set(expected_paths)):
             raise PatchApplicationError(
@@ -49,6 +49,38 @@ class GitChangeVerifier:
                 "Some expected repository changes were not detected."
             )
 
+        self._verify_change_types(
+            expected_changes=expected_changes,
+            final_files=final_files,
+        )
+
+    @staticmethod
+    def _verify_change_types(
+        expected_changes: list[CodeChange],
+        final_files: dict[str, tuple[str, str | None]],
+    ) -> None:
+        expected_status = {
+            "create": "untracked",
+            "modify": "modified",
+            "delete": "deleted",
+        }
+
+        for change in expected_changes:
+            expected_type = expected_status.get(change.change_type)
+
+            if expected_type is None:
+                raise PatchApplicationError(
+                    f"Unsupported expected change type: {change.change_type}."
+                )
+
+            actual_status = final_files.get(change.file_path)
+
+            if actual_status is None or actual_status[0] != expected_type:
+                raise PatchApplicationError(
+                    f"Repository change type does not match the expected "
+                    f"'{change.change_type}' operation for '{change.file_path}'."
+                )
+
     @staticmethod
     def _build_file_state(
         state: GitRepositoryState,
@@ -59,11 +91,7 @@ class GitChangeVerifier:
         untracked = state.untracked_files
         deleted = state.deleted_files
 
-        if (
-            modified & untracked
-            or modified & deleted
-            or untracked & deleted
-        ):
+        if modified & untracked or modified & deleted or untracked & deleted:
             raise PatchApplicationError(
                 "Repository snapshot contains conflicting file classifications."
             )

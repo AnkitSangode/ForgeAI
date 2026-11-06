@@ -83,11 +83,11 @@ def test_created_file_exists(
 
     sandbox_provider.file_exists.assert_called_once_with(
         session,
-        "src/new_file.py",
+        "repository/src/new_file.py",
     )
     sandbox_provider.read_file.assert_called_once_with(
         session,
-        "src/new_file.py",
+        "repository/src/new_file.py",
     )
 
 
@@ -120,7 +120,7 @@ def test_modified_file_has_different_hash(
 
     sandbox_provider.file_exists.return_value = True
     sandbox_provider.read_file.return_value = SandboxFileResult(
-        file_path="src/auth.py",
+        file_path="repository/src/auth.py",
         sha256="modified_hash",
     )
 
@@ -132,7 +132,7 @@ def test_modified_file_has_different_hash(
 
     sandbox_provider.read_file.assert_called_once_with(
         session,
-        "src/auth.py",
+        "repository/src/auth.py",
     )
 
 
@@ -146,7 +146,7 @@ def test_modified_file_has_original_hash(
 
     sandbox_provider.file_exists.return_value = True
     sandbox_provider.read_file.return_value = SandboxFileResult(
-        file_path="src/auth.py",
+        file_path="repository/src/auth.py",
         sha256="original_hash",
     )
 
@@ -219,7 +219,7 @@ def test_deleted_file_does_not_exist(
 
     sandbox_provider.file_exists.assert_called_once_with(
         session,
-        "src/auth.py",
+        "repository/src/auth.py",
     )
 
     sandbox_provider.read_file.assert_not_called()
@@ -293,7 +293,7 @@ def test_modified_file_without_sha256_is_rejected(
 
     sandbox_provider.file_exists.return_value = True
     sandbox_provider.read_file.return_value = SandboxFileResult(
-        file_path="src/auth.py",
+        file_path="repository/src/auth.py",
         sha256=None,
     )
 

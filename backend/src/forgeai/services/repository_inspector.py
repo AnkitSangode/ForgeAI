@@ -1,8 +1,13 @@
-import os
+from pathlib import PurePosixPath
 
+from forgeai.execution.sandbox.base import (
+    SandboxProvider,
+    SandboxSession,
+)
 from forgeai.services.repository_inspection_result import (
     RepositoryInspectionResult,
 )
+
 
 EXCLUDED_DIRECTORIES = {
     ".git",
@@ -31,53 +36,69 @@ IMPORTANT_FILES = {
 }
 
 
-class RepositoryInspector:
-    """Inspects a local repository and returns its file information."""
+class SandboxRepositoryInspector:
+    """Inspects a cloned repository inside a remote sandbox."""
 
-    def inspect(self, repository_path: str) -> RepositoryInspectionResult:
-        if not os.path.exists(repository_path):
+    def __init__(
+        self,
+        sandbox_provider: SandboxProvider,
+        max_repository_files: int = MAX_REPOSITORY_FILES,
+    ) -> None:
+        if max_repository_files <= 0:
+            raise ValueError(
+                "Maximum repository file count must be positive."
+            )
+
+        self.sandbox_provider = sandbox_provider
+        self.max_repository_files = max_repository_files
+
+    def inspect(
+        self,
+        session: SandboxSession,
+        repository_path: str = "repository",
+    ) -> RepositoryInspectionResult:
+        """Discover repository files inside the sandbox."""
+
+        if repository_path != "repository":
             return RepositoryInspectionResult(
                 status="unavailable",
                 files=[],
-                error="Repository path does not exist.",
+                error="Repository path must be the configured repository directory.",
             )
 
-        if not os.path.isdir(repository_path):
-            return RepositoryInspectionResult(
-                status="unavailable",
-                files=[],
-                error="Repository path is not a directory.",
-            )
+        excluded_names = " ".join(
+            f"-name {name}" for name in sorted(EXCLUDED_DIRECTORIES)
+        )
 
-        repository_files: list[str] = []
+        prune_expression = " -o ".join(
+            f"-name {name}" for name in sorted(EXCLUDED_DIRECTORIES)
+        )
+
+        command = (
+            "find repository "
+            f"\\( -type d \\( {prune_expression} \\) -prune \\) "
+            "-o "
+            "\\( -type f ! -type l -print0 \\)"
+        )
 
         try:
-            repository_root = os.path.realpath(repository_path)
+            result = self.sandbox_provider.run_command(
+                session=session,
+                command=command,
+                timeout_seconds=30,
+            )
 
-            for root, directories, files in os.walk(
-                repository_root,
-                topdown=True,
-                followlinks=False,
-            ):
-                directories[:] = [
-                    directory
-                    for directory in directories
-                    if directory not in EXCLUDED_DIRECTORIES
-                    and not os.path.islink(os.path.join(root, directory))
-                ]
+            if result.exit_code != 0:
+                return RepositoryInspectionResult(
+                    status="unavailable",
+                    files=[],
+                    error=(
+                        "Repository inspection failed: "
+                        f"{result.stderr.strip() or 'find command failed.'}"
+                    ),
+                )
 
-                for filename in files:
-                    absolute_path = os.path.join(root, filename)
-
-                    if os.path.islink(absolute_path):
-                        continue
-
-                    relative_path = os.path.relpath(
-                        absolute_path,
-                        repository_root,
-                    )
-
-                    repository_files.append(relative_path)
+            repository_files = self._parse_file_paths(result.stdout)
 
             prioritized_files = sorted(
                 repository_files,
@@ -87,9 +108,13 @@ class RepositoryInspector:
                 ),
             )
 
-            truncated = len(prioritized_files) > MAX_REPOSITORY_FILES
+            truncated = (
+                len(prioritized_files) > self.max_repository_files
+            )
 
-            selected_files = prioritized_files[:MAX_REPOSITORY_FILES]
+            selected_files = prioritized_files[
+                : self.max_repository_files
+            ]
 
             return RepositoryInspectionResult(
                 status="available",
@@ -97,7 +122,7 @@ class RepositoryInspector:
                 truncated=truncated,
             )
 
-        except OSError as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
             return RepositoryInspectionResult(
                 status="unavailable",
                 files=[],
@@ -105,18 +130,51 @@ class RepositoryInspector:
             )
 
     @staticmethod
+    def _parse_file_paths(stdout: str) -> list[str]:
+        """Convert NUL-separated sandbox paths into repository-relative paths."""
+
+        repository_files: list[str] = []
+
+        for raw_path in stdout.split("\x00"):
+            if not raw_path:
+                continue
+
+            path = PurePosixPath(raw_path)
+
+            if (
+                path.is_absolute()
+                or not path.parts
+                or path.parts[0] != "repository"
+                or any(part in {"", ".", ".."} for part in path.parts)
+            ):
+                raise ValueError(
+                    f"Sandbox returned an invalid repository path: {raw_path}"
+                )
+
+            relative_path = PurePosixPath(*path.parts[1:])
+
+            if not relative_path.parts:
+                continue
+
+            repository_files.append(relative_path.as_posix())
+
+        return repository_files
+
+    @staticmethod
     def _get_file_priority(file_path: str) -> int:
-        filename = os.path.basename(file_path)
+        filename = PurePosixPath(file_path).name
+        path_parts = PurePosixPath(file_path).parts
 
         if filename in IMPORTANT_FILES:
             return 1
 
         if file_path.endswith((".py", ".ts", ".tsx", ".js", ".jsx")):
-            if "tests" in file_path.lower().split(os.sep):
+            if "tests" in path_parts:
                 return 3
+
             return 2
 
-        if "tests" in file_path.lower().split(os.sep):
+        if "tests" in path_parts:
             return 3
 
         return 4

@@ -140,3 +140,13 @@ class PatchApprovalService:
         except Exception:
             self.session.rollback()
             raise
+
+    def get_approval(self, approval_id: str) -> PatchApproval:
+        """Retrieve an approval by its ID."""
+
+        approval = self.repository.get_by_id(UUID(approval_id))
+
+        if approval is None:
+            raise ApprovalNotFoundError(f"Approval {approval_id} was not found.")
+
+        return approval

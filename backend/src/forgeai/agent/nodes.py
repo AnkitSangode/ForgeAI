@@ -1,63 +1,266 @@
+
 from forgeai.agent.coder import CoderAgent
+from forgeai.agent.coder_schema import CoderResponse
 from forgeai.agent.planner import PlannerAgent
 from forgeai.agent.researcher import ResearcherAgent
 from forgeai.agent.researcher_schema import ResearchResponse
+from forgeai.agent.reviewer import ReviewerAgent
+from forgeai.agent.reviewer_schema import ReviewResponse
 from forgeai.agent.schemas import PlanResponse
 from forgeai.agent.state import ForgeAgentState
+
+from forgeai.application.repository_clone_service import (
+    RepositoryCloneService,
+)
+
+from forgeai.execution.sandbox.base import SandboxProvider
+
 from forgeai.llm.exceptions import LLMError
-from forgeai.services.repository_context_builder import RepositoryContextBuilder
-from forgeai.services.repository_inspector import RepositoryInspector
+
+from forgeai.services.repository_context_builder import (
+    RepositoryContextBuilder,
+)
+from forgeai.services.repository_inspector import (
+    SandboxRepositoryInspector,
+)
+from forgeai.services.sandbox_repository_file_reader import (
+    SandboxRepositoryFileReader,
+)
+from forgeai.services.session_bound_repository_file_reader import (
+    SessionBoundRepositoryFileReader,
+)
 
 
 def prepare_task_node(state: ForgeAgentState) -> dict:
-    """Validate the task input and prepare a basic task context"""
+    """Validate task input before allocating sandbox resources."""
 
-    description = state["task_description"].strip()
-    repository_url = state["repository_url"].strip()
-    repository_path = state.get("repository_path", "").strip()
+    description = state.get("task_description", "").strip()
+    repository_url = state.get("repository_url", "").strip()
 
     if not description:
-        return {"status": "failed", "error": "Task description cannot be empty."}
+        return {
+            "status": "failed",
+            "error": "Task description cannot be empty.",
+        }
 
     if not repository_url:
-        return {"status": "failed", "error": "Repository URL cannot be empty."}
-
-    if not repository_path:
         return {
             "status": "failed",
-            "error": "Local repository path cannot be empty.",
+            "error": "Repository URL cannot be empty.",
         }
 
     return {
+        "task_description": description,
+        "repository_url": repository_url,
+        "repository_path": "repository",
         "repository_context": (
-            f"Target repository: {repository_url}\nEngineering task: {description}"
+            f"Target repository: {repository_url}\n"
+            f"Engineering task: {description}"
         ),
         "status": "in_progress",
+        "error": "",
     }
 
 
-def inspect_repostiory_node(state: ForgeAgentState) -> dict:
-    """Inspect the local repository and update the agent state."""
+def create_repository_clone_node(
+    sandbox_provider: SandboxProvider,
+):
+    """Clone the target GitHub repository into the active sandbox."""
 
-    repository_path = state["repository_path"]
-    inspector = RepositoryInspector()
-    result = inspector.inspect(repository_path)
+    clone_service = RepositoryCloneService(
+        sandbox_provider=sandbox_provider,
+    )
 
-    if result.status == "unavailable":
-        return {
-            "repository_status": result.status,
-            "repository_files": [],
-            "repository_truncated": result.truncated,
-            "status": "failed",
-            "error": result.error or "Repository inspection failed.",
-        }
+    def clone_repository_node(state: ForgeAgentState) -> dict:
+        if state.get("status") == "failed":
+            return {}
 
-    return {
-        "repository_status": result.status,
-        "repository_files": result.files,
-        "repository_truncated": result.truncated,
-        "status": "repository_inspected",
-    }
+        session = state.get("sandbox_session")
+
+        if session is None:
+            return {
+                "status": "failed",
+                "error": (
+                    "Repository cloning requires an active sandbox."
+                ),
+            }
+
+        try:
+            result = clone_service.clone(
+                session=session,
+                repository_url=state["repository_url"],
+            )
+
+            return {
+                "repository_name": result.repository_name,
+                "repository_path": result.repository_path,
+                "repository_commit_sha": result.commit_sha,
+                "repository_remote_url": result.remote_url,
+                "status": "repository_cloned",
+                "error": "",
+            }
+
+        except Exception as error:
+            return {
+                "status": "failed",
+                "error": f"Repository cloning failed: {error}",
+            }
+
+    return clone_repository_node
+
+
+def create_repository_inspection_node(
+    sandbox_provider: SandboxProvider,
+):
+    """Inspect repository files inside the active sandbox."""
+
+    inspector = SandboxRepositoryInspector(
+        sandbox_provider=sandbox_provider,
+    )
+
+    def inspect_repository_node(state: ForgeAgentState) -> dict:
+        if state.get("status") == "failed":
+            return {}
+
+        session = state.get("sandbox_session")
+
+        if session is None:
+            return {
+                "status": "failed",
+                "error": (
+                    "Repository inspection requires an active sandbox."
+                ),
+            }
+
+        try:
+            result = inspector.inspect(
+                session=session,
+                repository_path=state.get(
+                    "repository_path",
+                    "repository",
+                ),
+            )
+
+            if result.status == "unavailable":
+                return {
+                    "repository_status": result.status,
+                    "repository_files": [],
+                    "repository_truncated": False,
+                    "status": "failed",
+                    "error": (
+                        result.error
+                        or "Repository inspection failed."
+                    ),
+                }
+
+            return {
+                "repository_status": result.status,
+                "repository_files": result.files,
+                "repository_truncated": result.truncated,
+                "status": "repository_inspected",
+                "error": "",
+            }
+
+        except Exception as error:
+            return {
+                "status": "failed",
+                "error": f"Repository inspection failed: {error}",
+            }
+
+    return inspect_repository_node
+
+
+def create_repository_context_node(
+    sandbox_provider: SandboxProvider,
+):
+    """Build bounded repository context from sandbox files."""
+
+    sandbox_reader = SandboxRepositoryFileReader(
+        sandbox_provider=sandbox_provider,
+    )
+
+    def build_context_node(state: ForgeAgentState) -> dict:
+        if state.get("status") == "failed":
+            return {}
+
+        session = state.get("sandbox_session")
+
+        if session is None:
+            return {
+                "status": "failed",
+                "error": (
+                    "Context building requires an active sandbox."
+                ),
+            }
+
+        repository_path = state.get(
+            "repository_path",
+            "repository",
+        )
+        repository_files = state.get("repository_files", [])
+
+        session_reader = SessionBoundRepositoryFileReader(
+            sandbox_reader=sandbox_reader,
+            session=session,
+        )
+
+        context_builder = RepositoryContextBuilder(
+            file_reader=session_reader,
+        )
+
+        try:
+            result = context_builder.build(
+                repository_path=repository_path,
+                file_paths=repository_files,
+            )
+
+            context_files = [
+                {
+                    "file_path": file.file_path,
+                    "content": file.content,
+                    "sha256": file.sha256,
+                }
+                for file in result.files
+            ]
+
+            if result.status == "unavailable":
+                return {
+                    "repository_context_files": context_files,
+                    "repository_context_status": result.status,
+                    "repository_context_bytes": result.total_bytes,
+                    "repository_context_skipped_files": (
+                        result.skipped_files
+                    ),
+                    "repository_context_errors": result.errors,
+                    "status": "failed",
+                    "error": (
+                        result.errors[0]
+                        if result.errors
+                        else "Unable to build repository context."
+                    ),
+                }
+
+            return {
+                "repository_context_files": context_files,
+                "repository_context_status": result.status,
+                "repository_context_bytes": result.total_bytes,
+                "repository_context_skipped_files": (
+                    result.skipped_files
+                ),
+                "repository_context_errors": result.errors,
+                "status": "context_built",
+                "error": "",
+            }
+
+        except Exception as error:
+            return {
+                "status": "failed",
+                "error": (
+                    f"Repository context building failed: {error}"
+                ),
+            }
+
+    return build_context_node
 
 
 def create_planner_node(planner_agent: PlannerAgent):
@@ -67,15 +270,16 @@ def create_planner_node(planner_agent: PlannerAgent):
         if state.get("status") == "failed":
             return {}
 
-        # Convert the repository's selected files into readable context.
         context_parts = []
 
         for file in state.get("repository_context_files", []):
-            context_parts.append(f"FILE: {file['file_path']}\nCONTENT:\n{file['content']}")
+            context_parts.append(
+                f"FILE: {file['file_path']}\n"
+                f"CONTENT:\n{file['content']}"
+            )
 
         repository_context = "\n\n".join(context_parts)
 
-        # Include metadata so the Planner knows whether context is incomplete.
         context_status = state.get(
             "repository_context_status",
             "unavailable",
@@ -101,6 +305,7 @@ def create_planner_node(planner_agent: PlannerAgent):
             return {
                 "plan": plan.model_dump(mode="json"),
                 "status": "plan_created",
+                "error": "",
             }
 
         except LLMError as error:
@@ -124,15 +329,23 @@ def create_researcher_node(researcher_agent: ResearcherAgent):
         if not plan_data:
             return {
                 "status": "failed",
-                "error": "Researcher cannot run because no plan is available.",
+                "error": (
+                    "Researcher cannot run because no plan is available."
+                ),
             }
 
-        repository_context_files = state.get("repository_context_files", [])
+        repository_context_files = state.get(
+            "repository_context_files",
+            [],
+        )
 
         if not repository_context_files:
             return {
                 "status": "failed",
-                "error": "Researcher cannot run because repository context is unavailable.",
+                "error": (
+                    "Researcher cannot run because repository "
+                    "context is unavailable."
+                ),
             }
 
         try:
@@ -160,11 +373,14 @@ def create_researcher_node(researcher_agent: ResearcherAgent):
 
 
 def create_coder_node(coder_agent: CoderAgent):
+    """Create a LangGraph node for code generation."""
+
     def coder_node(state: ForgeAgentState) -> dict:
         if state.get("status") == "failed":
             return {}
 
         plan_data = state.get("plan")
+
         if not plan_data:
             return {
                 "status": "failed",
@@ -172,18 +388,25 @@ def create_coder_node(coder_agent: CoderAgent):
             }
 
         research_data = state.get("research")
+
         if not research_data:
             return {
                 "status": "failed",
                 "error": "Coder cannot run because no research is available.",
             }
 
-        repository_context_files = state.get("repository_context_files", [])
+        repository_context_files = state.get(
+            "repository_context_files",
+            [],
+        )
 
         if not repository_context_files:
             return {
                 "status": "failed",
-                "error": "Coder cannot run because repository context is unavailable.",
+                "error": (
+                    "Coder cannot run because repository "
+                    "context is unavailable."
+                ),
             }
 
         try:
@@ -212,43 +435,76 @@ def create_coder_node(coder_agent: CoderAgent):
     return coder_node
 
 
-def build_repository_context_node(state: ForgeAgentState) -> dict:
-    """Build bounded repository context from discovered files."""
+def create_reviewer_node(reviewer_agent: ReviewerAgent):
+    """Create a LangGraph node for reviewing generated code changes."""
 
-    repository_path = state["repository_path"]
-    repository_files = state.get("repository_files", [])
+    def reviewer_node(state: ForgeAgentState) -> dict:
+        if state.get("status") == "failed":
+            return {}
 
-    context_builder = RepositoryContextBuilder()
+        plan_data = state.get("plan")
+        research_data = state.get("research")
+        code_changes_data = state.get("code_changes")
 
-    result = context_builder.build(
-        repository_path=repository_path,
-        file_paths=repository_files,
-    )
+        if not plan_data:
+            return {
+                "status": "failed",
+                "error": "Reviewer cannot run because no plan is available.",
+            }
 
-    context_files = [
-        {
-            "file_path": file.file_path,
-            "content": file.content,
-        }
-        for file in result.files
-    ]
+        if not research_data:
+            return {
+                "status": "failed",
+                "error": (
+                    "Reviewer cannot run because no research is available."
+                ),
+            }
 
-    if result.status == "unavailable":
-        return {
-            "repository_context_files": context_files,
-            "repository_context_status": result.status,
-            "repository_context_bytes": result.total_bytes,
-            "repository_context_skipped_files": result.skipped_files,
-            "repository_context_errors": result.errors,
-            "status": "failed",
-            "error": (result.errors[0] if result.errors else "Unable to build repository context."),
-        }
+        if not code_changes_data:
+            return {
+                "status": "failed",
+                "error": (
+                    "Reviewer cannot run because no code changes are available."
+                ),
+            }
 
-    return {
-        "repository_context_files": context_files,
-        "repository_context_status": result.status,
-        "repository_context_bytes": result.total_bytes,
-        "repository_context_skipped_files": result.skipped_files,
-        "repository_context_errors": result.errors,
-        "status": "context_built",
-    }
+        repository_context_files = state.get(
+            "repository_context_files",
+            [],
+        )
+
+        if not repository_context_files:
+            return {
+                "status": "failed",
+                "error": (
+                    "Reviewer cannot run because repository "
+                    "context is unavailable."
+                ),
+            }
+
+        try:
+            plan = PlanResponse.model_validate(plan_data)
+            research = ResearchResponse.model_validate(research_data)
+            code_changes = CoderResponse.model_validate(code_changes_data)
+
+            review = reviewer_agent.review(
+                task_description=state["task_description"],
+                plan=plan,
+                research=research,
+                code_changes=code_changes,
+                repository_context_files=repository_context_files,
+            )
+
+            return {
+                "review": review.model_dump(mode="json"),
+                "status": "review_completed",
+                "error": "",
+            }
+
+        except (LLMError, ValueError) as error:
+            return {
+                "status": "failed",
+                "error": str(error),
+            }
+
+    return reviewer_node

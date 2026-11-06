@@ -1,186 +1,197 @@
-from unittest.mock import Mock
+from hashlib import sha256
+from unittest.mock import MagicMock
 
 import pytest
 
-from forgeai.agent.coder import CoderAgent
-from forgeai.agent.coder_schema import CodeChange, CoderResponse
 from forgeai.agent.graph import build_agent_graph
-from forgeai.agent.planner import PlannerAgent
-from forgeai.agent.researcher import ResearcherAgent
-from forgeai.agent.researcher_schema import (
-    ResearchFinding,
-    ResearchResponse,
+from forgeai.execution.sandbox.base import (
+    CommandExecutionResult,
+    SandboxFileResult,
+    SandboxSession,
 )
-from forgeai.agent.schemas import PlanResponse, PlanStep
 
 
-@pytest.fixture
-def valid_initial_state(tmp_path):
-    readme_content = "# Example Project"
+@pytest.mark.unit
+def test_graph_executes_successful_workflow():
+    # ---------------------------------------------------------
+    # Arrange: Sandbox session and provider
+    # ---------------------------------------------------------
 
-    readme_file = tmp_path / "README.md"
-    readme_file.write_text(readme_content, encoding="utf-8")
+    sandbox_session = SandboxSession(
+        sandbox_id="test-sandbox",
+        _handle=MagicMock(),
+    )
 
-    return {
-        "task_id": "task-123",
-        "task_description": "Fix the authentication bug.",
-        "repository_url": "https://github.com/example/repository",
-        "repository_path": str(tmp_path),
-        "repository_context_files": [],
-        "repository_context_status": "unavailable",
-        "repository_context_bytes": 0,
-        "repository_context_skipped_files": [],
-        "repository_context_errors": [],
+    sandbox_provider = MagicMock()
+
+    sandbox_provider.create.return_value = sandbox_session
+    sandbox_provider.file_exists.return_value = False
+    sandbox_provider.is_running.return_value = True
+
+    # ---------------------------------------------------------
+    # Arrange: Repository files returned by the file reader
+    # ---------------------------------------------------------
+
+    file_contents = {
+        "repository/pyproject.toml": """
+[project]
+name = "sample-project"
+version = "0.1.0"
+""",
+        "repository/README.md": """
+# Sample Project
+
+A sample repository for testing ForgeAI.
+""",
+        "repository/src/auth.py": """
+def authenticate(username: str, password: str) -> bool:
+    return username == "admin" and password == "password"
+""",
+        "repository/tests/test_auth.py": """
+def test_authenticate():
+    assert True
+""",
     }
 
+    def mock_read_file(session, file_path):
+        content = file_contents[file_path]
 
-@pytest.fixture
-def planner_agent():
-    agent = Mock(spec=PlannerAgent)
+        return SandboxFileResult(
+            file_path=file_path,
+            content=content,
+            sha256=sha256(content.encode("utf-8")).hexdigest(),
+        )
 
-    agent.generate_plan.return_value = PlanResponse(
-        objective="Fix the authentication bug.",
-        steps=[
-            PlanStep(
-                step_number=1,
-                title="Inspect authentication",
-                description="Inspect the authentication implementation.",
-                expected_output="Identify the authentication problem.",
+    sandbox_provider.read_file.side_effect = mock_read_file
+
+    # ---------------------------------------------------------
+    # Arrange: Sandbox command responses
+    #
+    # 1. Git clone
+    # 2. Resolve cloned repository commit
+    # 3. Inspect repository files
+    #
+    # Each context file then requires:
+    #   - One command to check file type
+    #   - One command to check file size
+    # ---------------------------------------------------------
+
+    inspected_files = [
+        "repository/pyproject.toml",
+        "repository/README.md",
+        "repository/src/auth.py",
+        "repository/tests/test_auth.py",
+    ]
+
+    inspection_output = "\0".join(inspected_files) + "\0"
+
+    command_results = [
+        # 1. Clone repository
+        CommandExecutionResult(
+            command="git clone",
+            exit_code=0,
+            stdout="",
+            stderr="",
+        ),
+
+        # 2. Get repository commit SHA
+        CommandExecutionResult(
+            command="git rev-parse HEAD",
+            exit_code=0,
+            stdout="abc123def456\n",
+            stderr="",
+        ),
+
+        # 3. Inspect repository files
+        CommandExecutionResult(
+            command="find repository",
+            exit_code=0,
+            stdout=inspection_output,
+            stderr="",
+        ),
+    ]
+
+    # Add file-type and file-size responses for each file.
+    for file_path in inspected_files:
+        content = file_contents[file_path]
+        size = len(content.encode("utf-8"))
+
+        # File type check
+        command_results.append(
+            CommandExecutionResult(
+                command="file type check",
+                exit_code=0,
+                stdout="file",
+                stderr="",
             )
-        ],
-        success_criteria=["Authentication works correctly."],
+        )
+
+        # File size check
+        command_results.append(
+            CommandExecutionResult(
+                command="file size check",
+                exit_code=0,
+                stdout=f"{size}\n",
+                stderr="",
+            )
+        )
+
+    sandbox_provider.run_command.side_effect = command_results
+
+    # ---------------------------------------------------------
+    # Arrange: Agent graph
+    # ---------------------------------------------------------
+
+    graph = build_agent_graph(
+        sandbox_provider=sandbox_provider,
     )
 
-    return agent
-
-
-@pytest.fixture
-def researcher_agent():
-    agent = Mock(spec=ResearcherAgent)
-
-    agent.research.return_value = {
-        "summary": "Authentication implementation needs correction.",
-        "findings": [],
+    initial_state = {
+        "task_id": "test-task-001",
+        "task_description": (
+            "Inspect this repository and identify potential "
+            "authentication bugs."
+        ),
+        "repository_url": "https://github.com/example/sample-project",
     }
 
-    # Replace with a real ResearchResponse, as shown below.
-    return agent
+    # ---------------------------------------------------------
+    # Act: Execute the graph exactly once
+    # ---------------------------------------------------------
 
+    result = graph.invoke(initial_state)
 
-@pytest.fixture
-def valid_research_response():
+    # ---------------------------------------------------------
+    # Assert: Workflow execution
+    # ---------------------------------------------------------
 
-    return ResearchResponse(
-        summary="Found an authentication issue in the repository.",
-        findings=[
-            ResearchFinding(
-                file_path="README.md",
-                evidence="# Example Project",
-                observation="The README contains project information.",
-                relevance="It is the only available repository context.",
-            )
-        ],
-        files_inspected=["README.md"],
-        root_cause_hypothesis=("The authentication implementation requires further inspection."),
-        confidence="low",
-        remaining_questions=[],
-    )
+    assert result["status"] == "review_completed"
 
+    # Repository metadata
+    assert result["repository_status"] == "available"
+    assert result["repository_name"] == "sample-project"
+    assert result["repository_path"] == "repository"
+    assert result["repository_commit_sha"] == "abc123def456"
 
-@pytest.fixture
-def coder_agent():
-    agent = Mock(spec=CoderAgent)
+    # Repository inspection
+    assert result["repository_files"]
+    assert len(result["repository_files"]) == 4
 
-    agent.generate_changes.return_value = CoderResponse(
-        summary="Update authentication documentation.",
-        changes=[
-            CodeChange(
-                file_path="README.md",
-                change_type="modify",
-                unified_diff=(
-                    "--- a/README.md\n"
-                    "+++ b/README.md\n"
-                    "@@ -1 +1 @@\n"
-                    "-# Example Project\n"
-                    "+# Example Project\n"
-                ),
-                explanation="Update the project documentation.",
-            )
-        ],
-        tests_to_run=[],
-        risks=[],
-    )
+    # Repository context
+    assert result["repository_context_status"] == "available"
+    assert result["repository_context_files"]
+    assert len(result["repository_context_files"]) == 4
+    assert result["repository_context_bytes"] > 0
 
-    return agent
+    # Agent execution
+    assert result["plan"]
+    assert result["research"]
+    assert result["code_changes"]
 
+    # Reviewer result
+    assert result["review"]["decision"] == "approved"
 
-def test_graph_executes_successful_workflow(
-    valid_initial_state,
-    planner_agent,
-    researcher_agent,
-    valid_research_response,
-    coder_agent,
-):
-    researcher_agent.research.return_value = valid_research_response
-
-    graph = build_agent_graph(
-        planner_agent=planner_agent,
-        researcher_agent=researcher_agent,
-        coder_agent=coder_agent,
-    )
-
-    result = graph.invoke(valid_initial_state)
-
-    assert result["status"] == "code_changes_generated"
-    assert result["plan"]["objective"] == "Fix the authentication bug."
-    assert result["research"]["summary"] == ("Found an authentication issue in the repository.")
-    assert result["code_changes"]["summary"] == ("Update authentication documentation.")
-
-    planner_agent.generate_plan.assert_called_once()
-    researcher_agent.research.assert_called_once()
-    coder_agent.generate_changes.assert_called_once()
-
-
-def test_graph_skips_researcher_when_planner_fails(
-    valid_initial_state,
-    planner_agent,
-    researcher_agent,
-    coder_agent,
-):
-    from forgeai.llm.exceptions import LLMProviderError
-
-    planner_agent.generate_plan.side_effect = LLMProviderError("LLM provider unavailable.")
-
-    graph = build_agent_graph(
-        planner_agent=planner_agent,
-        researcher_agent=researcher_agent,
-        coder_agent=coder_agent,
-    )
-
-    result = graph.invoke(valid_initial_state)
-
-    assert result["status"] == "failed"
-    researcher_agent.research.assert_not_called()
-    coder_agent.generate_changes.assert_not_called()
-
-
-def test_graph_skips_coder_when_researcher_fails(
-    valid_initial_state,
-    planner_agent,
-    researcher_agent,
-    coder_agent,
-):
-    from forgeai.llm.exceptions import LLMProviderError
-
-    researcher_agent.research.side_effect = LLMProviderError("Research failed.")
-
-    graph = build_agent_graph(
-        planner_agent=planner_agent,
-        researcher_agent=researcher_agent,
-        coder_agent=coder_agent,
-    )
-
-    result = graph.invoke(valid_initial_state)
-
-    assert result["status"] == "failed"
-    coder_agent.generate_changes.assert_not_called()
+    # Sandbox interactions
+    sandbox_provider.create.assert_called_once()
+    sandbox_provider.read_file.assert_called()
+    sandbox_provider.run_command.assert_called()

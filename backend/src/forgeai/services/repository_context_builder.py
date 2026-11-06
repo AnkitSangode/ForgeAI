@@ -1,11 +1,28 @@
+from typing import Protocol
+
 from forgeai.services.repository_context_result import (
     RepositoryContextResult,
     RepositoryFileContext,
 )
+from forgeai.services.repository_file_read_result import (
+    RepositoryFileReadResult,
+)
 from forgeai.services.repository_file_reader import RepositoryFileReader
+
 
 MAX_CONTEXT_FILES = 20
 MAX_CONTEXT_BYTES = 500 * 1024
+
+
+class RepositoryFileReaderProtocol(Protocol):
+    """Contract required by the repository context builder."""
+
+    def read(
+        self,
+        repository_path: str,
+        file_path: str,
+    ) -> RepositoryFileReadResult:
+        ...
 
 
 class RepositoryContextBuilder:
@@ -13,7 +30,7 @@ class RepositoryContextBuilder:
 
     def __init__(
         self,
-        file_reader: RepositoryFileReader | None = None,
+        file_reader: RepositoryFileReaderProtocol | None = None,
         max_files: int = MAX_CONTEXT_FILES,
         max_context_bytes: int = MAX_CONTEXT_BYTES,
     ) -> None:
@@ -51,7 +68,10 @@ class RepositoryContextBuilder:
 
             if result.status == "unavailable":
                 skipped_files.append(file_path)
-                errors.append(f"{file_path}: {result.error or 'Unable to read file.'}")
+                errors.append(
+                    f"{file_path}: "
+                    f"{result.error or 'Unable to read file.'}"
+                )
                 continue
 
             content = result.content or ""
@@ -63,7 +83,10 @@ class RepositoryContextBuilder:
 
             if result.sha256 is None:
                 skipped_files.append(file_path)
-                errors.append(f"{file_path}: File reader did not provide a SHA-256 snapshot.")
+                errors.append(
+                    f"{file_path}: "
+                    "File reader did not provide a SHA-256 snapshot."
+                )
                 continue
 
             collected_files.append(
@@ -73,6 +96,7 @@ class RepositoryContextBuilder:
                     sha256=result.sha256,
                 )
             )
+
             total_bytes += content_bytes
 
         if not collected_files:

@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     e2b_template: str | None = None
     e2b_workspace_root: str = "/workspace"
 
+    # Authentication configuration
+    jwt_secret_key: SecretStr
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = Field(default=30, ge=1, le=1440)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
