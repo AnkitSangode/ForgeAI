@@ -60,6 +60,22 @@ class E2BSandboxProvider(SandboxProvider):
 
         return str(PurePosixPath(self._workspace_root) / relative_path)
 
+    def connect(self, sandbox_id: str) -> SandboxSession:
+        if not sandbox_id.strip():
+            raise ValueError("Sandbox ID cannot be empty.")
+
+        sandbox = Sandbox._cls_connect_sandbox(
+            sandbox_id=sandbox_id,
+            timeout=self._timeout,
+            on_resume="restore",
+            api_key=self._api_key,
+        )
+
+        return SandboxSession(
+            sandbox_id=sandbox.sandbox_id,
+            _handle=sandbox,
+        )
+
     def create(self, timeout_seconds: int) -> SandboxSession:
         if timeout_seconds <= 0:
             raise ValueError("Sandbox timeout must be positive.")

@@ -19,6 +19,7 @@ class CoderAgent:
         plan: PlanResponse,
         research: ResearchResponse,
         repository_context_files: list[dict[str, str]],
+        review_feedback: str | None = None,
     ) -> CoderResponse:
         if not task_description.strip():
             raise ValueError("Task description cannot be empty.")
@@ -51,6 +52,7 @@ class CoderAgent:
             plan=plan,
             research=research,
             repository_context_files=repository_context_files,
+            review_feedback=review_feedback,
         )
 
         response = self._llm_service.generate(
@@ -74,12 +76,32 @@ class CoderAgent:
         plan: PlanResponse,
         research: ResearchResponse,
         repository_context_files: list[dict[str, str]],
+        review_feedback: str | None = None,
     ) -> str:
         repository_files = "\n\n".join(
             f"<repository_file path={json.dumps(file['file_path'])}>\n"
             f"{file['content']}\n"
             f"</repository_file>"
             for file in repository_context_files
+        )
+
+        feedback_section = (
+            f"""
+PREVIOUS REVIEWER FEEDBACK:
+
+{review_feedback}
+
+You must address the reviewer's feedback in this revision.
+Preserve changes that were already correct.
+Do not blindly follow feedback if it conflicts with the user task,
+repository evidence, or safety requirements.
+Explain any feedback you cannot safely address.
+"""
+            if review_feedback
+            else """
+PREVIOUS REVIEWER FEEDBACK:
+None. This is the initial code generation attempt.
+"""
         )
 
         return f"""
@@ -96,6 +118,9 @@ IMPLEMENTATION PLAN:
 
 RESEARCH FINDINGS:
 {research.model_dump_json(indent=2)}
+
+FEEDBACK:
+{feedback_section}
 
 REPOSITORY FILES:
 {repository_files}

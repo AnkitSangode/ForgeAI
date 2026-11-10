@@ -35,6 +35,7 @@ def test_graph_executes_successful_workflow():
     sandbox_provider.create.return_value = sandbox_session
     sandbox_provider.file_exists.return_value = False
     sandbox_provider.is_running.return_value = True
+    sandbox_provider.connect.return_value = sandbox_session
 
     # ---------------------------------------------------------
     # Arrange: Repository files
@@ -345,5 +346,8 @@ def test_authenticate():
     sandbox_provider.read_file.assert_called()
     sandbox_provider.run_command.assert_called()
 
-    # Verify that the same sandbox session was used.
-    assert result["sandbox_session"] == sandbox_session
+    # Verify that the sandbox ID is persisted in graph state.
+    assert result["sandbox_id"] == "test-sandbox"
+
+    # Verify that repository nodes reconnect to the existing sandbox.
+    sandbox_provider.connect.assert_called()

@@ -7,6 +7,7 @@ from e2b import Sandbox
 from forgeai.core.config import Settings
 from forgeai.execution.sandbox.base import SandboxSession
 from forgeai.execution.sandbox.e2b_provider import E2BSandboxProvider
+from unittest.mock import MagicMock, patch
 
 
 @pytest.fixture
@@ -235,3 +236,46 @@ def test_read_file_returns_content_and_sha256(
     assert result.content == content
     assert result.sha256 == expected_hash
     assert result.file_path == "src/auth.py"
+
+def test_connect_reconnects_to_existing_sandbox(
+    provider: E2BSandboxProvider,
+    mock_sandbox: MagicMock,
+) -> None:
+    with patch(
+        "forgeai.execution.sandbox.e2b_provider.Sandbox._cls_connect_sandbox",
+        return_value=mock_sandbox,
+    ) as connect_mock:
+        session = provider.connect("test-sandbox-123")
+
+    connect_mock.assert_called_once_with(
+        sandbox_id="test-sandbox-123",
+        timeout=provider._timeout,
+        on_resume="restore",
+        api_key=provider._api_key,
+    )
+
+    assert session.sandbox_id == "test-sandbox-123"
+    assert session._handle is mock_sandbox
+
+
+def test_connect_rejects_empty_sandbox_id(
+    provider: E2BSandboxProvider,
+) -> None:
+    with patch(
+        "forgeai.execution.sandbox.e2b_provider.Sandbox._cls_connect_sandbox",
+    ) as connect_mock:
+        with pytest.raises(ValueError, match="Sandbox ID cannot be empty"):
+            provider.connect("")
+
+    connect_mock.assert_not_called()
+
+
+def test_connect_propagates_sdk_errors(
+    provider: E2BSandboxProvider,
+) -> None:
+    with patch(
+        "forgeai.execution.sandbox.e2b_provider.Sandbox._cls_connect_sandbox",
+        side_effect=RuntimeError("Sandbox is unavailable"),
+    ):
+        with pytest.raises(RuntimeError, match="Sandbox is unavailable"):
+            provider.connect("test-sandbox-123")

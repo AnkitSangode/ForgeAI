@@ -21,6 +21,7 @@ from forgeai.agent.reviewer_schema import ReviewResponse
 from forgeai.agent.sandbox_nodes import create_sandbox_node
 from forgeai.agent.state import ForgeAgentState
 from forgeai.execution.sandbox.base import SandboxProvider
+from langgraph.checkpoint.base import BaseCheckpointSaver
 
 
 def route_after_prepare(
@@ -38,7 +39,7 @@ def route_after_sandbox_creation(
     if state.get("status") == "failed":
         return "stop"
 
-    if not state.get("sandbox_session"):
+    if not state.get("sandbox_id"):
         return "stop"
 
     return "continue"
@@ -103,12 +104,16 @@ def route_after_coding(
 
 def route_after_review(
     state: ForgeAgentState,
+    max_coding_attempts: int = 3,
 ) -> Literal[
     "approved",
     "changes_requested",
     "rejected",
+    "retry_limit_reached",
     "stop",
 ]:
+    """Route the workflow according to the review decision."""
+
     if state.get("status") == "failed":
         return "stop"
 
@@ -122,10 +127,13 @@ def route_after_review(
     if review.decision == "approved":
         return "approved"
 
-    if review.decision == "changes_requested":
-        return "changes_requested"
+    if review.decision == "rejected":
+        return "rejected"
 
-    return "rejected"
+    if state.get("review_attempts", 0) >= max_coding_attempts:
+        return "retry_limit_reached"
+
+    return "changes_requested"
 
 
 def build_agent_graph(
@@ -135,8 +143,13 @@ def build_agent_graph(
     reviewer_agent: ReviewerAgent,
     sandbox_provider: SandboxProvider,
     sandbox_timeout_seconds: int = 600,
+    max_coding_attempts: int = 3,
+    checkpointer: BaseCheckpointSaver | None = None,
 ):
     """Build and compile the ForgeAI agent workflow."""
+
+    if max_coding_attempts < 1:
+        raise ValueError("max_coding_attempts must be at least 1.")
 
     builder = StateGraph(ForgeAgentState)
 
@@ -164,17 +177,41 @@ def build_agent_graph(
     coder_node = create_coder_node(coder_agent)
     reviewer_node = create_reviewer_node(reviewer_agent)
 
-    # Register nodes.
+    # Review routing closure.
+    def review_router(state: ForgeAgentState):
+        return route_after_review(
+            state,
+            max_coding_attempts=max_coding_attempts,
+        )
+
+    # Explicit terminal node for retry exhaustion.
+    def review_limit_reached_node(state: ForgeAgentState) -> dict:
+        return {
+            "status": "review_attempts_exhausted",
+            "error": (
+                f"Maximum coding attempts ({max_coding_attempts}) reached. "
+                "The reviewer has not approved the proposed changes."
+            ),
+        }
+
+    # Register infrastructure nodes.
     builder.add_node("prepare_task", prepare_task_node)
     builder.add_node("create_sandbox", sandbox_node)
     builder.add_node("clone_repository", clone_node)
     builder.add_node("inspect_repository", inspection_node)
     builder.add_node("build_repository_context", context_node)
 
+    # Register agent nodes.
     builder.add_node("planner", planner_node)
     builder.add_node("researcher", researcher_node)
     builder.add_node("coder", coder_node)
     builder.add_node("reviewer", reviewer_node)
+
+    # Register terminal node.
+    builder.add_node(
+        "review_limit_reached",
+        review_limit_reached_node,
+    )
 
     # Entry point.
     builder.add_edge(START, "prepare_task")
@@ -259,16 +296,20 @@ def build_agent_graph(
         },
     )
 
-    # Reviewer -> End (temporary until HITL integration).
+    # Reviewer -> Approval, revision, rejection, or termination.
     builder.add_conditional_edges(
         "reviewer",
-        route_after_review,
+        review_router,
         {
             "approved": END,
-            "changes_requested": END,
+            "changes_requested": "coder",
             "rejected": END,
+            "retry_limit_reached": "review_limit_reached",
             "stop": END,
         },
     )
 
-    return builder.compile()
+    # Retry exhaustion -> End.
+    builder.add_edge("review_limit_reached", END)
+
+    return builder.compile(checkpointer=checkpointer)

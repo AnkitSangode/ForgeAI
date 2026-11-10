@@ -42,6 +42,11 @@ class SandboxProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def connect(self, sandbox_id: str) -> SandboxSession:
+        """Reconnect to an existing sandbox."""
+        raise NotImplementedError
+
+    @abstractmethod
     def run_command(
         self,
         session: SandboxSession,

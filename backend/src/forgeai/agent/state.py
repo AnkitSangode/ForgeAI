@@ -3,7 +3,7 @@ from typing import Any, NotRequired, TypedDict
 
 
 class ForgeAgentState(TypedDict):
-    """Data passed between nodes during one agent run."""
+    """Serializable data passed between nodes during one agent run."""
 
     # Task information
     task_id: str
@@ -31,7 +31,6 @@ class ForgeAgentState(TypedDict):
 
     # Sandbox information
     sandbox_id: NotRequired[str]
-    sandbox_session: NotRequired[Any]
 
     # Planner output
     plan: NotRequired[dict[str, Any]]

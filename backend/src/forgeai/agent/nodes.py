@@ -13,7 +13,10 @@ from forgeai.application.repository_clone_service import (
     RepositoryCloneService,
 )
 
-from forgeai.execution.sandbox.base import SandboxProvider
+from forgeai.execution.sandbox.base import (
+    SandboxProvider,
+    SandboxSession,
+)
 
 from forgeai.llm.exceptions import LLMError
 
@@ -29,6 +32,22 @@ from forgeai.services.sandbox_repository_file_reader import (
 from forgeai.services.session_bound_repository_file_reader import (
     SessionBoundRepositoryFileReader,
 )
+
+
+def get_sandbox_session(
+    state: ForgeAgentState,
+    sandbox_provider: SandboxProvider,
+) -> SandboxSession:
+    """Reconnect to an existing sandbox using its persisted ID."""
+
+    sandbox_id = state.get("sandbox_id")
+
+    if not sandbox_id:
+        raise ValueError(
+            "Sandbox ID is missing from the agent state."
+        )
+
+    return sandbox_provider.connect(sandbox_id)
 
 
 def prepare_task_node(state: ForgeAgentState) -> dict:
@@ -75,17 +94,12 @@ def create_repository_clone_node(
         if state.get("status") == "failed":
             return {}
 
-        session = state.get("sandbox_session")
-
-        if session is None:
-            return {
-                "status": "failed",
-                "error": (
-                    "Repository cloning requires an active sandbox."
-                ),
-            }
-
         try:
+            session = get_sandbox_session(
+                state=state,
+                sandbox_provider=sandbox_provider,
+            )
+
             result = clone_service.clone(
                 session=session,
                 repository_url=state["repository_url"],
@@ -122,17 +136,12 @@ def create_repository_inspection_node(
         if state.get("status") == "failed":
             return {}
 
-        session = state.get("sandbox_session")
-
-        if session is None:
-            return {
-                "status": "failed",
-                "error": (
-                    "Repository inspection requires an active sandbox."
-                ),
-            }
-
         try:
+            session = get_sandbox_session(
+                state=state,
+                sandbox_provider=sandbox_provider,
+            )
+
             result = inspector.inspect(
                 session=session,
                 repository_path=state.get(
@@ -183,32 +192,27 @@ def create_repository_context_node(
         if state.get("status") == "failed":
             return {}
 
-        session = state.get("sandbox_session")
-
-        if session is None:
-            return {
-                "status": "failed",
-                "error": (
-                    "Context building requires an active sandbox."
-                ),
-            }
-
-        repository_path = state.get(
-            "repository_path",
-            "repository",
-        )
-        repository_files = state.get("repository_files", [])
-
-        session_reader = SessionBoundRepositoryFileReader(
-            sandbox_reader=sandbox_reader,
-            session=session,
-        )
-
-        context_builder = RepositoryContextBuilder(
-            file_reader=session_reader,
-        )
-
         try:
+            session = get_sandbox_session(
+                state=state,
+                sandbox_provider=sandbox_provider,
+            )
+
+            repository_path = state.get(
+                "repository_path",
+                "repository",
+            )
+            repository_files = state.get("repository_files", [])
+
+            session_reader = SessionBoundRepositoryFileReader(
+                sandbox_reader=sandbox_reader,
+                session=session,
+            )
+
+            context_builder = RepositoryContextBuilder(
+                file_reader=session_reader,
+            )
+
             result = context_builder.build(
                 repository_path=repository_path,
                 file_paths=repository_files,
@@ -373,7 +377,7 @@ def create_researcher_node(researcher_agent: ResearcherAgent):
 
 
 def create_coder_node(coder_agent: CoderAgent):
-    """Create a LangGraph node for code generation."""
+    """Create a LangGraph node for code generation and revisions."""
 
     def coder_node(state: ForgeAgentState) -> dict:
         if state.get("status") == "failed":
@@ -413,15 +417,20 @@ def create_coder_node(coder_agent: CoderAgent):
             plan = PlanResponse.model_validate(plan_data)
             research = ResearchResponse.model_validate(research_data)
 
+            # Count every code generation, including the initial attempt.
+            review_attempts = state.get("review_attempts", 0) + 1
+
             code_changes = coder_agent.generate_changes(
                 task_description=state["task_description"],
                 plan=plan,
                 research=research,
                 repository_context_files=repository_context_files,
+                review_feedback=state.get("review_feedback"),
             )
 
             return {
                 "code_changes": code_changes.model_dump(mode="json"),
+                "review_attempts": review_attempts,
                 "status": "code_changes_generated",
                 "error": "",
             }
@@ -495,8 +504,28 @@ def create_reviewer_node(reviewer_agent: ReviewerAgent):
                 repository_context_files=repository_context_files,
             )
 
+            review_feedback = ""
+
+            if review.decision == "changes_requested":
+                feedback_parts = [
+                    f"Review summary: {review.summary}",
+                ]
+
+                for index, finding in enumerate(review.findings, start=1):
+                    feedback_parts.append(
+                        (
+                            f"{index}. Severity: {finding.severity}\n"
+                            f"File: {finding.file_path}\n"
+                            f"Issue: {finding.description}\n"
+                            f"Recommendation: {finding.recommendation}"
+                        )
+                    )
+
+                review_feedback = "\n\n".join(feedback_parts)
+
             return {
                 "review": review.model_dump(mode="json"),
+                "review_feedback": review_feedback,
                 "status": "review_completed",
                 "error": "",
             }
