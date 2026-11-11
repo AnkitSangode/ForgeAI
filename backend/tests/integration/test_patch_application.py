@@ -1,4 +1,3 @@
-
 import difflib
 import hashlib
 
@@ -58,21 +57,13 @@ def test_patch_application_in_real_e2b_sandbox():
 
         assert result.exit_code == 0, result.stderr
 
-        tracked_files = [
-            path
-            for path in result.stdout.split("\x00")
-            if path
-        ]
+        tracked_files = [path for path in result.stdout.split("\x00") if path]
 
         assert tracked_files, "The cloned repository contains no tracked files."
 
         # Prefer README.md, otherwise use the first tracked file.
         file_path = next(
-            (
-                path
-                for path in tracked_files
-                if path.lower() == "readme.md"
-            ),
+            (path for path in tracked_files if path.lower() == "readme.md"),
             tracked_files[0],
         )
 
@@ -119,8 +110,7 @@ def test_patch_application_in_real_e2b_sandbox():
             change_type="modify",
             unified_diff=unified_diff,
             explanation=(
-                "Append a marker to verify real patch application "
-                "inside an isolated E2B sandbox."
+                "Append a marker to verify real patch application inside an isolated E2B sandbox."
             ),
         )
 
@@ -133,9 +123,7 @@ def test_patch_application_in_real_e2b_sandbox():
                 RepositoryFileContext(
                     file_path=file_path,
                     content=original_content,
-                    sha256=hashlib.sha256(
-                        original_content.encode("utf-8")
-                    ).hexdigest(),
+                    sha256=hashlib.sha256(original_content.encode("utf-8")).hexdigest(),
                 )
             ],
             total_bytes=len(original_content.encode("utf-8")),

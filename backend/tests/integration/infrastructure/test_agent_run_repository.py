@@ -1,6 +1,5 @@
-
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4,UUID
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.orm import Session

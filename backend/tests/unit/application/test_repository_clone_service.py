@@ -1,4 +1,3 @@
-
 from unittest.mock import Mock
 
 import pytest
@@ -27,9 +26,7 @@ def session():
 
 
 def test_validate_github_url():
-    result = RepositoryCloneService._validate_repository_url(
-        "https://github.com/owner/project"
-    )
+    result = RepositoryCloneService._validate_repository_url("https://github.com/owner/project")
 
     assert result == "https://github.com/owner/project.git"
 

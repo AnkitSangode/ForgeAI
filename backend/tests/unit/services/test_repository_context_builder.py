@@ -108,8 +108,8 @@ def test_build_context_returns_unavailable_when_no_files_are_readable(tmp_path):
 
 
 def test_context_builder_works_with_session_bound_reader():
-    from unittest.mock import Mock
     import hashlib
+    from unittest.mock import Mock
 
     from forgeai.execution.sandbox.base import SandboxSession
     from forgeai.services.repository_context_builder import (

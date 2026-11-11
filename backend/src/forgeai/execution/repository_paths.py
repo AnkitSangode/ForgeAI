@@ -1,4 +1,3 @@
-
 from pathlib import PurePosixPath
 
 REPOSITORY_ROOT = "repository"

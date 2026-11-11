@@ -1,17 +1,16 @@
-
 from hashlib import sha256
 from unittest.mock import MagicMock
 
 import pytest
 
+from forgeai.agent.coder_schema import CodeChange, CoderResponse
 from forgeai.agent.graph import build_agent_graph
-from forgeai.agent.schemas import PlanResponse, PlanStep
 from forgeai.agent.researcher_schema import (
     ResearchFinding,
     ResearchResponse,
 )
-from forgeai.agent.coder_schema import CodeChange, CoderResponse
 from forgeai.agent.reviewer_schema import ReviewResponse
+from forgeai.agent.schemas import PlanResponse, PlanStep
 from forgeai.execution.sandbox.base import (
     CommandExecutionResult,
     SandboxFileResult,
@@ -94,7 +93,6 @@ def test_authenticate():
             stdout="",
             stderr="",
         ),
-
         # Resolve repository commit
         CommandExecutionResult(
             command="git rev-parse HEAD",
@@ -102,7 +100,6 @@ def test_authenticate():
             stdout="abc123def456\n",
             stderr="",
         ),
-
         # Inspect repository files
         CommandExecutionResult(
             command="find repository",
@@ -156,8 +153,7 @@ def test_authenticate():
                 step_number=2,
                 title="Review authentication tests",
                 description=(
-                    "Inspect existing tests and identify missing "
-                    "authentication test coverage."
+                    "Inspect existing tests and identify missing authentication test coverage."
                 ),
                 expected_output="Authentication test coverage assessment.",
             ),
@@ -183,17 +179,10 @@ def test_authenticate():
         findings=[
             ResearchFinding(
                 file_path="src/auth.py",
-                evidence=(
-                    'return username == "admin" and '
-                    'password == "password"'
-                ),
-                observation=(
-                    "The authentication implementation uses "
-                    "hardcoded credentials."
-                ),
+                evidence=('return username == "admin" and password == "password"'),
+                observation=("The authentication implementation uses hardcoded credentials."),
                 relevance=(
-                    "Hardcoded credentials create a security "
-                    "risk for the authentication system."
+                    "Hardcoded credentials create a security risk for the authentication system."
                 ),
             )
         ],
@@ -217,9 +206,7 @@ def test_authenticate():
     # ---------------------------------------------------------
 
     coder_response = CoderResponse(
-        summary=(
-            "Proposed an authentication implementation improvement."
-        ),
+        summary=("Proposed an authentication implementation improvement."),
         changes=[
             CodeChange(
                 file_path="src/auth.py",
@@ -244,10 +231,7 @@ def test_authenticate():
         tests_to_run=[
             "tests/test_auth.py",
         ],
-        risks=[
-            "The credential verification function must be implemented "
-            "by the application."
-        ],
+        risks=["The credential verification function must be implemented by the application."],
     )
 
     coder_agent = MagicMock()
@@ -259,10 +243,7 @@ def test_authenticate():
 
     reviewer_response = ReviewResponse(
         decision="approved",
-        summary=(
-            "The proposed authentication change has passed "
-            "the review criteria."
-        ),
+        summary=("The proposed authentication change has passed the review criteria."),
         findings=[],
         strengths=[
             "Handles empty credentials.",
@@ -290,13 +271,8 @@ def test_authenticate():
 
     initial_state = {
         "task_id": "test-task-001",
-        "task_description": (
-            "Inspect this repository and identify potential "
-            "authentication bugs."
-        ),
-        "repository_url": (
-            "https://github.com/example/sample-project"
-        ),
+        "task_description": ("Inspect this repository and identify potential authentication bugs."),
+        "repository_url": ("https://github.com/example/sample-project"),
     }
 
     # ---------------------------------------------------------

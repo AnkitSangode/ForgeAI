@@ -5,7 +5,6 @@ from sqlalchemy import create_engine, pool
 
 from forgeai.core.config import get_settings
 from forgeai.infrastructure.base import Base
-import forgeai.infrastructure.models
 
 config = context.config
 

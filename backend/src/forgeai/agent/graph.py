@@ -1,16 +1,16 @@
-
 from typing import Literal
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 
 from forgeai.agent.coder import CoderAgent
 from forgeai.agent.nodes import (
     create_coder_node,
     create_planner_node,
-    create_researcher_node,
     create_repository_clone_node,
     create_repository_context_node,
     create_repository_inspection_node,
+    create_researcher_node,
     create_reviewer_node,
     prepare_task_node,
 )
@@ -21,7 +21,6 @@ from forgeai.agent.reviewer_schema import ReviewResponse
 from forgeai.agent.sandbox_nodes import create_sandbox_node
 from forgeai.agent.state import ForgeAgentState
 from forgeai.execution.sandbox.base import SandboxProvider
-from langgraph.checkpoint.base import BaseCheckpointSaver
 
 
 def route_after_prepare(

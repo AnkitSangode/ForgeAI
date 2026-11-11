@@ -1,4 +1,3 @@
-
 from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
@@ -52,9 +51,7 @@ class AgentRunService:
         run = self.repository.get_by_id(UUID(run_id))
 
         if run is None:
-            raise AgentRunNotFoundError(
-                f"Agent run '{run_id}' was not found."
-            )
+            raise AgentRunNotFoundError(f"Agent run '{run_id}' was not found.")
 
         return run
 
@@ -70,9 +67,7 @@ class AgentRunService:
             run = self.repository.get_by_id(UUID(run_id))
 
             if run is None:
-                raise AgentRunNotFoundError(
-                    f"Agent run '{run_id}' was not found."
-                )
+                raise AgentRunNotFoundError(f"Agent run '{run_id}' was not found.")
 
             updated_run = replace(
                 run,

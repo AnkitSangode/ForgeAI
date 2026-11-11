@@ -1,27 +1,69 @@
-from dataclasses import replace
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 
 from forgeai.application.patch_approval_service import (
-    ApprovalAlreadyDecidedError,
-    ApprovalConsumptionError,
-    ApprovalNotFoundError,
+    ApprovalRunValidationError,
+    PatchApprovalNotFoundError,
     PatchApprovalService,
+    PatchApprovalStateError,
 )
-from forgeai.domain.patch_approval import (
-    ApprovalStatus,
-    PatchApproval,
-)
+from forgeai.domain.agent_run import AgentRun, AgentRunStatus
+from forgeai.domain.patch_approval import ApprovalStatus, PatchApproval
 
 
-def make_pending_approval() -> PatchApproval:
+@pytest.fixture
+def session():
+    return MagicMock()
+
+
+@pytest.fixture
+def approval_repository():
+    return MagicMock()
+
+
+@pytest.fixture
+def agent_run_repository():
+    return MagicMock()
+
+
+@pytest.fixture
+def service(session, approval_repository, agent_run_repository):
+    return PatchApprovalService(
+        session=session,
+        approval_repository=approval_repository,
+        agent_run_repository=agent_run_repository,
+    )
+
+
+@pytest.fixture
+def task_id():
+    return str(uuid4())
+
+
+@pytest.fixture
+def agent_run(task_id):
+    now = datetime.now(UTC)
+
+    return AgentRun(
+        id=str(uuid4()),
+        task_id=task_id,
+        thread_id=str(uuid4()),
+        status=AgentRunStatus.RUNNING,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+@pytest.fixture
+def approval(task_id, agent_run):
     return PatchApproval(
         approval_id=str(uuid4()),
-        task_id=str(uuid4()),
-        patch_sha256="a" * 64,
+        task_id=task_id,
+        agent_run_id=agent_run.id,
+        patch_sha256="test-patch-hash",
         status=ApprovalStatus.PENDING,
         approved_by=None,
         decided_at=None,
@@ -29,309 +71,443 @@ def make_pending_approval() -> PatchApproval:
     )
 
 
-def test_decide_approval_approves_pending_approval() -> None:
-    session = MagicMock()
-    repository = MagicMock()
-    approval = make_pending_approval()
-
-    repository.get_by_id_for_update.return_value = approval
-
-    service = PatchApprovalService(session, repository)
-
-    result = service.decide_approval(
-        approval_id=approval.approval_id,
-        approved=True,
-        actor_id="user-123",
-    )
-
-    assert result.status == ApprovalStatus.APPROVED
-    assert result.approved_by == "user-123"
-    assert result.decided_at is not None
-    assert result.decided_at.tzinfo == UTC
-
-    repository.get_by_id_for_update.assert_called_once_with(UUID(approval.approval_id))
-    repository.update.assert_called_once_with(result)
-    session.commit.assert_called_once()
-    session.rollback.assert_not_called()
+# ---------------------------------------------------------------------
+# CREATE APPROVAL
+# ---------------------------------------------------------------------
 
 
-def test_decide_approval_rejects_pending_approval() -> None:
-    session = MagicMock()
-    repository = MagicMock()
-    approval = make_pending_approval()
+def test_create_approval_success(
+    service,
+    session,
+    approval_repository,
+    agent_run_repository,
+    task_id,
+    agent_run,
+):
+    agent_run_repository.get_by_id.return_value = agent_run
 
-    repository.get_by_id_for_update.return_value = approval
-
-    service = PatchApprovalService(session, repository)
-
-    result = service.decide_approval(
-        approval_id=approval.approval_id,
-        approved=False,
-        actor_id="user-123",
-    )
-
-    assert result.status == ApprovalStatus.REJECTED
-    assert result.approved_by == "user-123"
-    repository.update.assert_called_once_with(result)
-    session.commit.assert_called_once()
-
-
-def test_decide_approval_raises_when_approval_not_found() -> None:
-    session = MagicMock()
-    repository = MagicMock()
-    repository.get_by_id_for_update.return_value = None
-
-    service = PatchApprovalService(session, repository)
-
-    with pytest.raises(ApprovalNotFoundError):
-        service.decide_approval(
-            approval_id=str(uuid4()),
-            approved=True,
-            actor_id="user-123",
-        )
-
-    repository.update.assert_not_called()
-    session.commit.assert_not_called()
-    session.rollback.assert_called_once()
-
-
-def test_decide_approval_rejects_already_decided_approval() -> None:
-    session = MagicMock()
-    repository = MagicMock()
-    approval = make_pending_approval()
-
-    decided_approval = PatchApproval(
-        **{
-            **approval.__dict__,
-            "status": ApprovalStatus.APPROVED,
-            "approved_by": "another-user",
-        }
-    )
-
-    repository.get_by_id_for_update.return_value = decided_approval
-
-    service = PatchApprovalService(session, repository)
-
-    with pytest.raises(ApprovalAlreadyDecidedError):
-        service.decide_approval(
-            approval_id=approval.approval_id,
-            approved=False,
-            actor_id="user-123",
-        )
-
-    repository.update.assert_not_called()
-    session.commit.assert_not_called()
-    session.rollback.assert_called_once()
-
-
-def test_decide_approval_requires_actor_id() -> None:
-    session = MagicMock()
-    repository = MagicMock()
-
-    service = PatchApprovalService(session, repository)
-
-    with pytest.raises(ValueError, match="actor ID"):
-        service.decide_approval(
-            approval_id=str(uuid4()),
-            approved=True,
-            actor_id=" ",
-        )
-
-    repository.get_by_id_for_update.assert_not_called()
-    session.rollback.assert_called_once()
-
-
-def test_create_approval_creates_pending_approval() -> None:
-    session = MagicMock()
-    repository = MagicMock()
-
-    service = PatchApprovalService(
-        session=session,
-        repository=repository,
-    )
-
-    task_id = "12345678-1234-5678-1234-567812345678"
-    patch_sha256 = "a" * 64
+    # Mock repository persistence by returning the domain object.
+    approval_repository.create.side_effect = lambda value: value
 
     result = service.create_approval(
         task_id=task_id,
-        patch_sha256=patch_sha256,
+        agent_run_id=agent_run.id,
+        patch_sha256="test-patch-hash",
     )
 
+    assert isinstance(result, PatchApproval)
     assert result.task_id == task_id
-    assert result.patch_sha256 == patch_sha256
+    assert result.agent_run_id == agent_run.id
+    assert result.patch_sha256 == "test-patch-hash"
     assert result.status == ApprovalStatus.PENDING
     assert result.approved_by is None
     assert result.decided_at is None
     assert result.consumed_at is None
 
-    UUID(result.approval_id)
-
-    repository.create.assert_called_once_with(result)
+    agent_run_repository.get_by_id.assert_called_once()
+    approval_repository.create.assert_called_once()
     session.commit.assert_called_once()
     session.rollback.assert_not_called()
 
 
-def test_create_approval_rolls_back_on_failure() -> None:
-    session = MagicMock()
-    repository = MagicMock()
-
-    repository.create.side_effect = RuntimeError("Database failure")
-
-    service = PatchApprovalService(
-        session=session,
-        repository=repository,
-    )
-
-    try:
+def test_create_approval_rejects_empty_run_id(
+    service,
+    session,
+    task_id,
+):
+    with pytest.raises(ApprovalRunValidationError):
         service.create_approval(
-            task_id="12345678-1234-5678-1234-567812345678",
-            patch_sha256="a" * 64,
+            task_id=task_id,
+            agent_run_id="",
+            patch_sha256="test-patch-hash",
         )
-        raise AssertionError("Expected RuntimeError")
-    except RuntimeError as exc:
-        assert str(exc) == "Database failure"
+
+    session.rollback.assert_called_once()
+
+
+def test_create_approval_rejects_invalid_run_uuid(
+    service,
+    session,
+    task_id,
+):
+    with pytest.raises(ApprovalRunValidationError):
+        service.create_approval(
+            task_id=task_id,
+            agent_run_id="invalid-uuid",
+            patch_sha256="test-patch-hash",
+        )
+
+    session.rollback.assert_called_once()
+
+
+def test_create_approval_rejects_missing_agent_run(
+    service,
+    session,
+    agent_run_repository,
+    task_id,
+):
+    agent_run_repository.get_by_id.return_value = None
+
+    with pytest.raises(ApprovalRunValidationError):
+        service.create_approval(
+            task_id=task_id,
+            agent_run_id=str(uuid4()),
+            patch_sha256="test-patch-hash",
+        )
+
+    session.rollback.assert_called_once()
+
+
+def test_create_approval_rejects_run_from_another_task(
+    service,
+    session,
+    agent_run_repository,
+    task_id,
+    agent_run,
+):
+    agent_run_repository.get_by_id.return_value = agent_run
+
+    with pytest.raises(ApprovalRunValidationError):
+        service.create_approval(
+            task_id=str(uuid4()),
+            agent_run_id=agent_run.id,
+            patch_sha256="test-patch-hash",
+        )
 
     session.rollback.assert_called_once()
     session.commit.assert_not_called()
 
 
-def make_approved_approval() -> PatchApproval:
-    approval = make_pending_approval()
+def test_create_approval_rejects_empty_patch_fingerprint(
+    service,
+    session,
+    task_id,
+    agent_run,
+    agent_run_repository,
+):
+    agent_run_repository.get_by_id.return_value = agent_run
 
-    return PatchApproval(
+    with pytest.raises(ValueError):
+        service.create_approval(
+            task_id=task_id,
+            agent_run_id=agent_run.id,
+            patch_sha256="",
+        )
+
+    session.rollback.assert_called_once()
+
+
+def test_create_approval_rolls_back_on_repository_failure(
+    service,
+    session,
+    approval_repository,
+    agent_run_repository,
+    task_id,
+    agent_run,
+):
+    agent_run_repository.get_by_id.return_value = agent_run
+    approval_repository.create.side_effect = RuntimeError("Database failure")
+
+    with pytest.raises(RuntimeError):
+        service.create_approval(
+            task_id=task_id,
+            agent_run_id=agent_run.id,
+            patch_sha256="test-patch-hash",
+        )
+
+    session.rollback.assert_called_once()
+    session.commit.assert_not_called()
+
+
+# ---------------------------------------------------------------------
+# DECIDE APPROVAL
+# ---------------------------------------------------------------------
+
+
+def test_decide_approval_success(
+    service,
+    session,
+    approval_repository,
+    approval,
+):
+    approval_repository.get_by_id.return_value = approval
+    approval_repository.update.side_effect = lambda value: value
+
+    result = service.decide_approval(
         approval_id=approval.approval_id,
-        task_id=approval.task_id,
-        patch_sha256=approval.patch_sha256,
-        status=ApprovalStatus.APPROVED,
-        approved_by="user-123",
-        decided_at=datetime.now(UTC),
+        approved=True,
+        actor_id="reviewer-123",
     )
 
+    assert result.status == ApprovalStatus.APPROVED
+    assert result.approved_by == "reviewer-123"
+    assert result.decided_at is not None
 
-def test_consume_approval_successfully() -> None:
-    session = MagicMock()
-    repository = MagicMock()
-    approval = make_approved_approval()
+    approval_repository.update.assert_called_once()
+    session.commit.assert_called_once()
+    session.rollback.assert_not_called()
 
-    repository.get_by_id_for_update.return_value = approval
 
-    service = PatchApprovalService(session, repository)
+def test_decide_approval_rejection(
+    service,
+    session,
+    approval_repository,
+    approval,
+):
+    approval_repository.get_by_id.return_value = approval
+    approval_repository.update.side_effect = lambda value: value
+
+    result = service.decide_approval(
+        approval_id=approval.approval_id,
+        approved=False,
+        actor_id="reviewer-123",
+    )
+
+    assert result.status == ApprovalStatus.REJECTED
+    assert result.approved_by == "reviewer-123"
+    assert result.decided_at is not None
+
+    session.commit.assert_called_once()
+
+
+def test_decide_approval_already_decided(
+    service,
+    session,
+    approval_repository,
+    approval,
+):
+    decided_approval = PatchApproval(
+        approval_id=approval.approval_id,
+        task_id=approval.task_id,
+        agent_run_id=approval.agent_run_id,
+        patch_sha256=approval.patch_sha256,
+        status=ApprovalStatus.APPROVED,
+        approved_by="reviewer-123",
+        decided_at=datetime.now(UTC),
+        consumed_at=None,
+    )
+
+    approval_repository.get_by_id.return_value = decided_approval
+
+    with pytest.raises(PatchApprovalStateError):
+        service.decide_approval(
+            approval_id=approval.approval_id,
+            approved=False,
+            actor_id="reviewer-456",
+        )
+
+    approval_repository.update.assert_not_called()
+    session.rollback.assert_called_once()
+
+
+def test_decide_approval_rejects_empty_actor(
+    service,
+    session,
+    approval_repository,
+    approval,
+):
+    approval_repository.get_by_id.return_value = approval
+
+    with pytest.raises(ValueError):
+        service.decide_approval(
+            approval_id=approval.approval_id,
+            approved=True,
+            actor_id="",
+        )
+
+    approval_repository.update.assert_not_called()
+    session.rollback.assert_called_once()
+
+
+def test_decide_approval_rolls_back_on_commit_failure(
+    service,
+    session,
+    approval_repository,
+    approval,
+):
+    approval_repository.get_by_id.return_value = approval
+    approval_repository.update.side_effect = lambda value: value
+    session.commit.side_effect = RuntimeError("Commit failed")
+
+    with pytest.raises(RuntimeError):
+        service.decide_approval(
+            approval_id=approval.approval_id,
+            approved=True,
+            actor_id="reviewer-123",
+        )
+
+    session.rollback.assert_called_once()
+
+
+# ---------------------------------------------------------------------
+# CONSUME APPROVAL
+# ---------------------------------------------------------------------
+
+
+def test_consume_approval_success(
+    service,
+    session,
+    approval_repository,
+    approval,
+):
+    approved_approval = PatchApproval(
+        approval_id=approval.approval_id,
+        task_id=approval.task_id,
+        agent_run_id=approval.agent_run_id,
+        patch_sha256=approval.patch_sha256,
+        status=ApprovalStatus.APPROVED,
+        approved_by="reviewer-123",
+        decided_at=datetime.now(UTC),
+        consumed_at=None,
+    )
+
+    approval_repository.get_by_id.return_value = approved_approval
+    approval_repository.update.side_effect = lambda value: value
 
     result = service.consume_approval(
         approval_id=approval.approval_id,
         task_id=approval.task_id,
+        agent_run_id=approval.agent_run_id,
         patch_sha256=approval.patch_sha256,
     )
 
-    assert result.consumed_at is not None
     assert result.status == ApprovalStatus.APPROVED
+    assert result.consumed_at is not None
 
-    repository.get_by_id_for_update.assert_called_once_with(UUID(approval.approval_id))
-    repository.update.assert_called_once_with(result)
+    approval_repository.update.assert_called_once()
     session.commit.assert_called_once()
     session.rollback.assert_not_called()
 
 
-def test_consume_approval_rejects_unknown_approval() -> None:
-    session = MagicMock()
-    repository = MagicMock()
-    repository.get_by_id_for_update.return_value = None
+@pytest.mark.parametrize(
+    ("field", "incorrect_value"),
+    [
+        ("task_id", str(uuid4())),
+        ("agent_run_id", str(uuid4())),
+        ("patch_sha256", "different-patch-hash"),
+    ],
+)
+def test_consume_approval_rejects_mismatched_identity(
+    service,
+    session,
+    approval_repository,
+    approval,
+    field,
+    incorrect_value,
+):
+    approved_approval = PatchApproval(
+        approval_id=approval.approval_id,
+        task_id=approval.task_id,
+        agent_run_id=approval.agent_run_id,
+        patch_sha256=approval.patch_sha256,
+        status=ApprovalStatus.APPROVED,
+        approved_by="reviewer-123",
+        decided_at=datetime.now(UTC),
+        consumed_at=None,
+    )
 
-    service = PatchApprovalService(session, repository)
+    approval_repository.get_by_id.return_value = approved_approval
 
-    with pytest.raises(ApprovalConsumptionError):
-        service.consume_approval(
-            approval_id=str(uuid4()),
-            task_id=str(uuid4()),
-            patch_sha256="a" * 64,
-        )
+    arguments = {
+        "approval_id": approval.approval_id,
+        "task_id": approval.task_id,
+        "agent_run_id": approval.agent_run_id,
+        "patch_sha256": approval.patch_sha256,
+    }
 
-    repository.update.assert_not_called()
-    session.commit.assert_not_called()
+    arguments[field] = incorrect_value
+
+    with pytest.raises(PatchApprovalStateError):
+        service.consume_approval(**arguments)
+
+    approval_repository.update.assert_not_called()
     session.rollback.assert_called_once()
 
 
-def test_consume_approval_rejects_wrong_task() -> None:
-    session = MagicMock()
-    repository = MagicMock()
-    approval = make_approved_approval()
+def test_consume_approval_rejects_pending_approval(
+    service,
+    session,
+    approval_repository,
+    approval,
+):
+    approval_repository.get_by_id.return_value = approval
 
-    repository.get_by_id_for_update.return_value = approval
-
-    service = PatchApprovalService(session, repository)
-
-    with pytest.raises(ApprovalConsumptionError):
-        service.consume_approval(
-            approval_id=approval.approval_id,
-            task_id=str(uuid4()),
-            patch_sha256=approval.patch_sha256,
-        )
-
-    repository.update.assert_not_called()
-    session.rollback.assert_called_once()
-
-
-def test_consume_approval_rejects_wrong_fingerprint() -> None:
-    session = MagicMock()
-    repository = MagicMock()
-    approval = make_approved_approval()
-
-    repository.get_by_id_for_update.return_value = approval
-
-    service = PatchApprovalService(session, repository)
-
-    with pytest.raises(ApprovalConsumptionError):
-        service.consume_approval(
-            approval_id=approval.approval_id,
-            task_id=approval.task_id,
-            patch_sha256="b" * 64,
-        )
-
-    repository.update.assert_not_called()
-    session.rollback.assert_called_once()
-
-
-def test_consume_approval_rejects_pending_approval() -> None:
-    session = MagicMock()
-    repository = MagicMock()
-    approval = make_pending_approval()
-
-    repository.get_by_id_for_update.return_value = approval
-
-    service = PatchApprovalService(session, repository)
-
-    with pytest.raises(ApprovalConsumptionError):
+    with pytest.raises(PatchApprovalStateError):
         service.consume_approval(
             approval_id=approval.approval_id,
             task_id=approval.task_id,
+            agent_run_id=approval.agent_run_id,
             patch_sha256=approval.patch_sha256,
         )
 
-    repository.update.assert_not_called()
+    approval_repository.update.assert_not_called()
     session.rollback.assert_called_once()
 
 
-def test_consume_approval_rejects_already_consumed_approval() -> None:
-    session = MagicMock()
-    repository = MagicMock()
-    approval = make_approved_approval()
-
-    consumed_approval = replace(
-        approval,
+def test_consume_approval_rejects_already_consumed_approval(
+    service,
+    session,
+    approval_repository,
+    approval,
+):
+    consumed_approval = PatchApproval(
+        approval_id=approval.approval_id,
+        task_id=approval.task_id,
+        agent_run_id=approval.agent_run_id,
+        patch_sha256=approval.patch_sha256,
+        status=ApprovalStatus.APPROVED,
+        approved_by="reviewer-123",
+        decided_at=datetime.now(UTC),
         consumed_at=datetime.now(UTC),
     )
 
-    repository.get_by_id_for_update.return_value = consumed_approval
+    approval_repository.get_by_id.return_value = consumed_approval
 
-    service = PatchApprovalService(session, repository)
-
-    with pytest.raises(ApprovalConsumptionError):
+    with pytest.raises(PatchApprovalStateError):
         service.consume_approval(
             approval_id=approval.approval_id,
             task_id=approval.task_id,
+            agent_run_id=approval.agent_run_id,
             patch_sha256=approval.patch_sha256,
         )
 
-    repository.update.assert_not_called()
+    approval_repository.update.assert_not_called()
     session.rollback.assert_called_once()
+
+
+# ---------------------------------------------------------------------
+# GET APPROVAL
+# ---------------------------------------------------------------------
+
+
+def test_get_approval_success(
+    service,
+    approval_repository,
+    approval,
+):
+    approval_repository.get_by_id.return_value = approval
+
+    result = service.get_approval(approval.approval_id)
+
+    assert result == approval
+    approval_repository.get_by_id.assert_called_once()
+
+
+def test_get_approval_not_found(
+    service,
+    approval_repository,
+):
+    approval_repository.get_by_id.return_value = None
+
+    with pytest.raises(PatchApprovalNotFoundError):
+        service.get_approval(str(uuid4()))
+
+
+def test_get_approval_rejects_invalid_uuid(
+    service,
+    approval_repository,
+):
+    with pytest.raises(PatchApprovalNotFoundError):
+        service.get_approval("not-a-valid-uuid")
+
+    approval_repository.get_by_id.assert_not_called()

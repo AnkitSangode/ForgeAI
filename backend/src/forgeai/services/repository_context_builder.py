@@ -9,7 +9,6 @@ from forgeai.services.repository_file_read_result import (
 )
 from forgeai.services.repository_file_reader import RepositoryFileReader
 
-
 MAX_CONTEXT_FILES = 20
 MAX_CONTEXT_BYTES = 500 * 1024
 
@@ -21,8 +20,7 @@ class RepositoryFileReaderProtocol(Protocol):
         self,
         repository_path: str,
         file_path: str,
-    ) -> RepositoryFileReadResult:
-        ...
+    ) -> RepositoryFileReadResult: ...
 
 
 class RepositoryContextBuilder:
@@ -68,10 +66,7 @@ class RepositoryContextBuilder:
 
             if result.status == "unavailable":
                 skipped_files.append(file_path)
-                errors.append(
-                    f"{file_path}: "
-                    f"{result.error or 'Unable to read file.'}"
-                )
+                errors.append(f"{file_path}: {result.error or 'Unable to read file.'}")
                 continue
 
             content = result.content or ""
@@ -83,10 +78,7 @@ class RepositoryContextBuilder:
 
             if result.sha256 is None:
                 skipped_files.append(file_path)
-                errors.append(
-                    f"{file_path}: "
-                    "File reader did not provide a SHA-256 snapshot."
-                )
+                errors.append(f"{file_path}: File reader did not provide a SHA-256 snapshot.")
                 continue
 
             collected_files.append(

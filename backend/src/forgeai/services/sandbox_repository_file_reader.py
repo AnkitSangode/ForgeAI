@@ -1,6 +1,5 @@
 import hashlib
 import shlex
-from pathlib import PurePosixPath
 
 from forgeai.execution.repository_paths import (
     resolve_repository_file_path,
@@ -12,7 +11,6 @@ from forgeai.execution.sandbox.base import (
 from forgeai.services.repository_file_read_result import (
     RepositoryFileReadResult,
 )
-
 
 MAX_FILE_SIZE_BYTES = 100 * 1024
 
@@ -85,9 +83,7 @@ class SandboxRepositoryFileReader:
             # Check file size before downloading its contents.
             size_result = self.sandbox_provider.run_command(
                 session=session,
-                command=(
-                    f"wc -c < {shlex.quote(remote_path)}"
-                ),
+                command=(f"wc -c < {shlex.quote(remote_path)}"),
                 timeout_seconds=10,
             )
 

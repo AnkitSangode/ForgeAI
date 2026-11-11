@@ -1,4 +1,3 @@
-
 import json
 
 from forgeai.agent.coder_schema import CoderResponse
@@ -47,9 +46,7 @@ class ReviewerAgent:
         )
 
         if not isinstance(response.content, ReviewResponse):
-            raise LLMResponseError(
-                "Reviewer returned an invalid structured response."
-            )
+            raise LLMResponseError("Reviewer returned an invalid structured response.")
 
         self._validate_response(
             response=response.content,
@@ -126,14 +123,10 @@ Return only the structured response matching the requested schema.
         code_changes: CoderResponse,
     ) -> None:
 
-        changed_paths = {
-            change.file_path
-            for change in code_changes.changes
-        }
+        changed_paths = {change.file_path for change in code_changes.changes}
 
         for finding in response.findings:
             if finding.file_path not in changed_paths:
                 raise LLMResponseError(
-                    "Reviewer referenced a file outside the proposed changes: "
-                    f"{finding.file_path}"
+                    f"Reviewer referenced a file outside the proposed changes: {finding.file_path}"
                 )

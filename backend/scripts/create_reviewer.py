@@ -15,7 +15,7 @@ def create_reviewer() -> None:
         sys.exit(1)
 
     password = input("Reviewer password: ")
-    confirmation = input("Confirm password: ")  
+    confirmation = input("Confirm password: ")
 
     if password != confirmation:
         print("Passwords do not match.")
@@ -27,9 +27,7 @@ def create_reviewer() -> None:
 
     with SessionLocal() as session:
         try:
-            existing_user = session.scalar(
-                select(User).where(User.email == email)
-            )
+            existing_user = session.scalar(select(User).where(User.email == email))
 
             if existing_user is not None:
                 print("An account with this email already exists.")

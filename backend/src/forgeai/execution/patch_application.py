@@ -1,4 +1,3 @@
-
 import logging
 
 from forgeai.agent.coder_schema import CodeChange
@@ -140,9 +139,7 @@ class PatchApplicationService:
 
         except (FileNotFoundError, PermissionError, OSError) as exc:
             if strict:
-                raise PatchApplicationError(
-                    "Failed to clean up the temporary patch file."
-                ) from exc
+                raise PatchApplicationError("Failed to clean up the temporary patch file.") from exc
 
             logger.warning(
                 "Failed to clean up temporary patch file '%s': %s",
@@ -156,14 +153,9 @@ class PatchApplicationService:
         """Combine individual unified diffs into one patch."""
 
         if not changes:
-            raise PatchApplicationError(
-                "Cannot build a patch without code changes."
-            )
+            raise PatchApplicationError("Cannot build a patch without code changes.")
 
-        patch_parts = [
-            change.unified_diff.rstrip("\n")
-            for change in changes
-        ]
+        patch_parts = [change.unified_diff.rstrip("\n") for change in changes]
 
         return "\n".join(patch_parts) + "\n"
 
@@ -175,10 +167,7 @@ class PatchApplicationService:
 
         result = self.sandbox_provider.run_command(
             session=session,
-            command=(
-                f"git -C {REPOSITORY_ROOT} "
-                "rev-parse --is-inside-work-tree"
-            ),
+            command=(f"git -C {REPOSITORY_ROOT} rev-parse --is-inside-work-tree"),
             timeout_seconds=self.COMMAND_TIMEOUT_SECONDS,
         )
 
@@ -202,14 +191,10 @@ class PatchApplicationService:
             )
 
         except FileExistsError as exc:
-            raise PatchApplicationError(
-                "A patch file already exists in the sandbox."
-            ) from exc
+            raise PatchApplicationError("A patch file already exists in the sandbox.") from exc
 
         except Exception as exc:
-            raise PatchApplicationError(
-                "Failed to write the patch into the sandbox."
-            ) from exc
+            raise PatchApplicationError("Failed to write the patch into the sandbox.") from exc
 
     def _check_patch(
         self,
@@ -219,17 +204,12 @@ class PatchApplicationService:
 
         result = self.sandbox_provider.run_command(
             session=session,
-            command=(
-                f"git -C {REPOSITORY_ROOT} "
-                f"apply --check {self.GIT_PATCH_FILE_PATH}"
-            ),
+            command=(f"git -C {REPOSITORY_ROOT} apply --check {self.GIT_PATCH_FILE_PATH}"),
             timeout_seconds=self.COMMAND_TIMEOUT_SECONDS,
         )
 
         if result.exit_code != 0:
-            raise PatchApplicationError(
-                f"Patch validation by Git failed: {result.stderr}"
-            )
+            raise PatchApplicationError(f"Patch validation by Git failed: {result.stderr}")
 
     def _apply_patch(
         self,
@@ -239,14 +219,9 @@ class PatchApplicationService:
 
         result = self.sandbox_provider.run_command(
             session=session,
-            command=(
-                f"git -C {REPOSITORY_ROOT} "
-                f"apply {self.GIT_PATCH_FILE_PATH}"
-            ),
+            command=(f"git -C {REPOSITORY_ROOT} apply {self.GIT_PATCH_FILE_PATH}"),
             timeout_seconds=self.COMMAND_TIMEOUT_SECONDS,
         )
 
         if result.exit_code != 0:
-            raise PatchApplicationError(
-                f"Git failed to apply the patch: {result.stderr}"
-            )
+            raise PatchApplicationError(f"Git failed to apply the patch: {result.stderr}")

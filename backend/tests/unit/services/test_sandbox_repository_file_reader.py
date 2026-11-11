@@ -231,9 +231,7 @@ def test_handles_provider_failure(
     sandbox_provider,
     session,
 ):
-    sandbox_provider.run_command.side_effect = RuntimeError(
-        "Sandbox unavailable"
-    )
+    sandbox_provider.run_command.side_effect = RuntimeError("Sandbox unavailable")
 
     result = reader.read(
         session,

@@ -4,7 +4,6 @@ from forgeai.services.repository_file_reader import (
 )
 
 
-
 def test_read_valid_repository_file(tmp_path):
     repository = tmp_path / "project"
     repository.mkdir()

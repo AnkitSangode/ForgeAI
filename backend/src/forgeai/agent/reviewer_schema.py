@@ -1,4 +1,3 @@
-
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -44,18 +43,12 @@ class ReviewResponse(BaseModel):
             raise ValueError("Test paths cannot be blank.")
 
         if self.decision == "approved":
-            if any(
-                finding.severity in {"critical", "high"}
-                for finding in self.findings
-            ):
+            if any(finding.severity in {"critical", "high"} for finding in self.findings):
                 raise ValueError(
-                    "A patch with critical or high severity findings "
-                    "cannot be approved."
+                    "A patch with critical or high severity findings cannot be approved."
                 )
 
         if self.decision == "rejected" and not self.findings:
-            raise ValueError(
-                "A rejected patch must include at least one finding."
-            )
+            raise ValueError("A rejected patch must include at least one finding.")
 
         return self

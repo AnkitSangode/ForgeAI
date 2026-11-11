@@ -1,4 +1,3 @@
-
 from abc import ABC, abstractmethod
 from uuid import UUID
 
@@ -6,7 +5,6 @@ from forgeai.domain.agent_run import AgentRun
 
 
 class AgentRunRepository(ABC):
-
     @abstractmethod
     def create(self, run: AgentRun) -> AgentRun:
         raise NotImplementedError

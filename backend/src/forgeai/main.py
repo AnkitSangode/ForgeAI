@@ -1,4 +1,3 @@
-
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -14,13 +13,12 @@ from forgeai.agent.reviewer import ReviewerAgent
 from forgeai.api.approvals import router as approvals_router
 from forgeai.api.auth import router as auth_router
 from forgeai.api.health import router as health_router
-from forgeai.api.tasks import router as tasks_router
 from forgeai.api.runs import router as runs_router
+from forgeai.api.tasks import router as tasks_router
 from forgeai.core.config import get_settings
 from forgeai.execution.sandbox.e2b_provider import E2BSandboxProvider
 from forgeai.llm.llm_service import LLMService
 from forgeai.llm.openai_provider import OpenAIProvider
-
 
 settings = get_settings()
 
@@ -42,9 +40,7 @@ async def lifespan(app: FastAPI):
     """
 
     if settings.e2b_api_key is None:
-        raise RuntimeError(
-            "E2B_API_KEY must be configured before starting ForgeAI."
-        )
+        raise RuntimeError("E2B_API_KEY must be configured before starting ForgeAI.")
 
     # Convert SQLAlchemy's URL into a psycopg-compatible connection string.
     conninfo = (

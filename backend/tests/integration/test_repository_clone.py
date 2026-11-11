@@ -1,4 +1,3 @@
-
 import pytest
 
 from forgeai.application.repository_clone_service import RepositoryCloneService

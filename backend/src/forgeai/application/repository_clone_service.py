@@ -1,4 +1,3 @@
-
 import re
 from urllib.parse import urlsplit
 
@@ -58,15 +57,10 @@ class RepositoryCloneService:
             session,
             self.REPOSITORY_DIRECTORY,
         ):
-            raise PatchApplicationError(
-                "Repository destination already exists in the sandbox."
-            )
+            raise PatchApplicationError("Repository destination already exists in the sandbox.")
 
         # The URL has been validated and its characters are restricted.
-        command = (
-            f"git clone --depth 1 -- "
-            f"'{clone_url}' '{self.REPOSITORY_DIRECTORY}'"
-        )
+        command = f"git clone --depth 1 -- '{clone_url}' '{self.REPOSITORY_DIRECTORY}'"
 
         result = self.sandbox_provider.run_command(
             session=session,
@@ -75,9 +69,7 @@ class RepositoryCloneService:
         )
 
         if result.exit_code != 0:
-            raise PatchApplicationError(
-                f"Repository cloning failed: {result.stderr[:1000]}"
-            )
+            raise PatchApplicationError(f"Repository cloning failed: {result.stderr[:1000]}")
 
         commit_result = self.sandbox_provider.run_command(
             session=session,
@@ -86,9 +78,7 @@ class RepositoryCloneService:
         )
 
         if commit_result.exit_code != 0:
-            raise PatchApplicationError(
-                "Could not determine the cloned repository commit."
-            )
+            raise PatchApplicationError("Could not determine the cloned repository commit.")
 
         return RepositoryCloneResult(
             repository_name=clone_url.rstrip("/").split("/")[-1].removesuffix(".git"),

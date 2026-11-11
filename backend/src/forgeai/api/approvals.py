@@ -13,7 +13,7 @@ from forgeai.api.schemas.approval import (
 )
 from forgeai.application.patch_approval_service import (
     ApprovalAlreadyDecidedError,
-    ApprovalNotFoundError,
+    PatchApprovalNotFoundError,
     PatchApprovalService,
 )
 from forgeai.infrastructure.models.user import User
@@ -38,7 +38,7 @@ def get_approval(
 
     try:
         approval = service.get_approval(str(approval_id))
-    except ApprovalNotFoundError:
+    except PatchApprovalNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Approval not found.",
@@ -73,7 +73,7 @@ def decide_approval(
             approved=payload.decision == ApprovalDecision.APPROVE,
             actor_id=str(reviewer.id),
         )
-    except ApprovalNotFoundError:
+    except PatchApprovalNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Approval not found.",

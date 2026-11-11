@@ -1,4 +1,3 @@
-
 from forgeai.agent.coder_schema import CodeChange
 from forgeai.execution.exceptions import FileIntegrityError
 from forgeai.execution.repository_paths import resolve_repository_file_path
@@ -26,13 +25,9 @@ class PostApplicationVerifier:
         """Verify that every proposed change was applied as expected."""
 
         if not changes:
-            raise FileIntegrityError(
-                "Cannot verify application: no code changes were provided."
-            )
+            raise FileIntegrityError("Cannot verify application: no code changes were provided.")
 
-        original_files = {
-            file.file_path: file for file in repository_context.files
-        }
+        original_files = {file.file_path: file for file in repository_context.files}
 
         for change in changes:
             try:
@@ -65,9 +60,7 @@ class PostApplicationVerifier:
                 )
 
             else:
-                raise FileIntegrityError(
-                    f"Unsupported change type: {change.change_type}"
-                )
+                raise FileIntegrityError(f"Unsupported change type: {change.change_type}")
 
     def _verify_created_file(
         self,
@@ -114,9 +107,7 @@ class PostApplicationVerifier:
             )
 
         if result.sha256 == original_file.sha256:
-            raise FileIntegrityError(
-                f"Patch application failed: '{file_path}' was not modified."
-            )
+            raise FileIntegrityError(f"Patch application failed: '{file_path}' was not modified.")
 
     def _verify_deleted_file(
         self,

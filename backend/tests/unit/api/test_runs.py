@@ -1,8 +1,7 @@
-
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from uuid import uuid4
 from unittest.mock import MagicMock
+from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -106,9 +105,7 @@ def test_start_agent_run_success(
         "review": {"decision": "approved"},
     }
 
-    response = client.post(
-        f"/api/v1/tasks/{sample_task.id}/runs"
-    )
+    response = client.post(f"/api/v1/tasks/{sample_task.id}/runs")
 
     assert response.status_code == 201
 
@@ -119,17 +116,13 @@ def test_start_agent_run_success(
     assert body["thread_id"] == sample_run.thread_id
     assert body["status"] == "awaiting_approval"
 
-    mock_run_service.create_run.assert_called_once_with(
-        str(sample_task.id)
-    )
+    mock_run_service.create_run.assert_called_once_with(str(sample_task.id))
 
     app.state.graph.invoke.assert_called_once()
 
     _, kwargs = app.state.graph.invoke.call_args
 
-    assert kwargs["config"]["configurable"]["thread_id"] == (
-        sample_run.thread_id
-    )
+    assert kwargs["config"]["configurable"]["thread_id"] == (sample_run.thread_id)
 
 
 def test_start_agent_run_rejected(
@@ -150,9 +143,7 @@ def test_start_agent_run_rejected(
         "review": {"decision": "rejected"},
     }
 
-    response = client.post(
-        f"/api/v1/tasks/{sample_task.id}/runs"
-    )
+    response = client.post(f"/api/v1/tasks/{sample_task.id}/runs")
 
     assert response.status_code == 201
     assert response.json()["status"] == "rejected"
@@ -176,9 +167,7 @@ def test_start_agent_run_graph_failure(
         "error": "Repository cloning failed",
     }
 
-    response = client.post(
-        f"/api/v1/tasks/{sample_task.id}/runs"
-    )
+    response = client.post(f"/api/v1/tasks/{sample_task.id}/runs")
 
     assert response.status_code == 201
     assert response.json()["status"] == "failed"
@@ -199,9 +188,7 @@ def test_start_agent_run_task_not_found(
 
     monkeypatch.setattr(TaskService, "get_task", fake_get_task)
 
-    response = client.post(
-        f"/api/v1/tasks/{sample_run.task_id}/runs"
-    )
+    response = client.post(f"/api/v1/tasks/{sample_run.task_id}/runs")
 
     assert response.status_code == 404
 
@@ -220,9 +207,7 @@ def test_start_agent_run_graph_unavailable(
 
     app.state.graph = None
 
-    response = client.post(
-        f"/api/v1/tasks/{sample_task.id}/runs"
-    )
+    response = client.post(f"/api/v1/tasks/{sample_task.id}/runs")
 
     assert response.status_code == 503
 
@@ -240,13 +225,9 @@ def test_start_agent_run_graph_exception(
         lambda self, task_id: sample_task,
     )
 
-    app.state.graph.invoke.side_effect = RuntimeError(
-        "Unexpected graph failure"
-    )
+    app.state.graph.invoke.side_effect = RuntimeError("Unexpected graph failure")
 
-    response = client.post(
-        f"/api/v1/tasks/{sample_task.id}/runs"
-    )
+    response = client.post(f"/api/v1/tasks/{sample_task.id}/runs")
 
     assert response.status_code == 500
 
@@ -257,8 +238,6 @@ def test_start_agent_run_graph_exception(
 
 
 def test_start_agent_run_invalid_task_uuid(client):
-    response = client.post(
-        "/api/v1/tasks/not-a-uuid/runs"
-    )
+    response = client.post("/api/v1/tasks/not-a-uuid/runs")
 
     assert response.status_code == 422

@@ -50,10 +50,7 @@ def test_inspect_returns_repository_relative_paths(
     session,
 ):
     sandbox_provider.run_command.return_value = make_command_result(
-        stdout=(
-            "repository/README.md\x00"
-            "repository/src/main.py\x00"
-        )
+        stdout=("repository/README.md\x00repository/src/main.py\x00")
     )
 
     result = inspector.inspect(session)
@@ -100,11 +97,7 @@ def test_inspect_truncates_file_list(
     )
 
     sandbox_provider.run_command.return_value = make_command_result(
-        stdout=(
-            "repository/a.py\x00"
-            "repository/b.py\x00"
-            "repository/c.py\x00"
-        )
+        stdout=("repository/a.py\x00repository/b.py\x00repository/c.py\x00")
     )
 
     result = inspector.inspect(session)
@@ -146,9 +139,7 @@ def test_inspect_rejects_invalid_paths(
     session,
     invalid_path,
 ):
-    sandbox_provider.run_command.return_value = make_command_result(
-        stdout=f"{invalid_path}\x00"
-    )
+    sandbox_provider.run_command.return_value = make_command_result(stdout=f"{invalid_path}\x00")
 
     result = inspector.inspect(session)
 
@@ -174,9 +165,7 @@ def test_inspect_handles_provider_exception(
     sandbox_provider,
     session,
 ):
-    sandbox_provider.run_command.side_effect = RuntimeError(
-        "Sandbox unavailable"
-    )
+    sandbox_provider.run_command.side_effect = RuntimeError("Sandbox unavailable")
 
     result = inspector.inspect(session)
 

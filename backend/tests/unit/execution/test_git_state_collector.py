@@ -1,4 +1,3 @@
-
 from unittest.mock import Mock
 
 import pytest
@@ -81,9 +80,7 @@ def test_capture_records_modified_file_and_hash(
 ):
     file_hash = "a" * 64
 
-    sandbox_provider.run_command.return_value = make_git_result(
-        " M src/auth.py\x00"
-    )
+    sandbox_provider.run_command.return_value = make_git_result(" M src/auth.py\x00")
     sandbox_provider.file_exists.return_value = True
     sandbox_provider.read_file.return_value = make_file_result(
         "repository/src/auth.py",
@@ -114,9 +111,7 @@ def test_capture_handles_staged_modified_file(
 ):
     file_hash = "b" * 64
 
-    sandbox_provider.run_command.return_value = make_git_result(
-        "M  src/auth.py\x00"
-    )
+    sandbox_provider.run_command.return_value = make_git_result("M  src/auth.py\x00")
     sandbox_provider.file_exists.return_value = True
     sandbox_provider.read_file.return_value = make_file_result(
         "repository/src/auth.py",
@@ -146,9 +141,7 @@ def test_capture_records_untracked_file_and_hash(
 ):
     file_hash = "c" * 64
 
-    sandbox_provider.run_command.return_value = make_git_result(
-        "?? src/new_file.py\x00"
-    )
+    sandbox_provider.run_command.return_value = make_git_result("?? src/new_file.py\x00")
     sandbox_provider.file_exists.return_value = True
     sandbox_provider.read_file.return_value = make_file_result(
         "repository/src/new_file.py",
@@ -182,9 +175,7 @@ def test_capture_records_deleted_file_without_hash(
     sandbox_provider,
     sandbox_session,
 ):
-    sandbox_provider.run_command.return_value = make_git_result(
-        " D src/old_file.py\x00"
-    )
+    sandbox_provider.run_command.return_value = make_git_result(" D src/old_file.py\x00")
 
     result = collector.capture(sandbox_session)
 
@@ -202,9 +193,7 @@ def test_capture_handles_staged_deleted_file(
     sandbox_provider,
     sandbox_session,
 ):
-    sandbox_provider.run_command.return_value = make_git_result(
-        "D  src/old_file.py\x00"
-    )
+    sandbox_provider.run_command.return_value = make_git_result("D  src/old_file.py\x00")
 
     result = collector.capture(sandbox_session)
 
@@ -226,9 +215,7 @@ def test_capture_handles_multiple_file_changes(
     untracked_hash = "e" * 64
 
     sandbox_provider.run_command.return_value = make_git_result(
-        " M src/auth.py\x00"
-        "?? tests/test_auth.py\x00"
-        " D src/legacy.py\x00"
+        " M src/auth.py\x00?? tests/test_auth.py\x00 D src/legacy.py\x00"
     )
 
     sandbox_provider.file_exists.return_value = True
@@ -249,18 +236,12 @@ def test_capture_handles_multiple_file_changes(
         ("tests/test_auth.py", untracked_hash),
     )
 
-    assert [
-        call.args[1]
-        for call in sandbox_provider.file_exists.call_args_list
-    ] == [
+    assert [call.args[1] for call in sandbox_provider.file_exists.call_args_list] == [
         "repository/src/auth.py",
         "repository/tests/test_auth.py",
     ]
 
-    assert [
-        call.args[1]
-        for call in sandbox_provider.read_file.call_args_list
-    ] == [
+    assert [call.args[1] for call in sandbox_provider.read_file.call_args_list] == [
         "repository/src/auth.py",
         "repository/tests/test_auth.py",
     ]
@@ -301,9 +282,7 @@ def test_capture_raises_when_changed_file_is_missing(
     sandbox_provider,
     sandbox_session,
 ):
-    sandbox_provider.run_command.return_value = make_git_result(
-        " M src/auth.py\x00"
-    )
+    sandbox_provider.run_command.return_value = make_git_result(" M src/auth.py\x00")
     sandbox_provider.file_exists.return_value = False
 
     with pytest.raises(
@@ -324,9 +303,7 @@ def test_capture_raises_when_file_hash_is_missing(
     sandbox_provider,
     sandbox_session,
 ):
-    sandbox_provider.run_command.return_value = make_git_result(
-        " M src/auth.py\x00"
-    )
+    sandbox_provider.run_command.return_value = make_git_result(" M src/auth.py\x00")
     sandbox_provider.file_exists.return_value = True
     sandbox_provider.read_file.return_value = SandboxFileResult(
         file_path="repository/src/auth.py",
@@ -432,10 +409,7 @@ def test_capture_hashes_files_in_sorted_order(
     sandbox_provider,
     sandbox_session,
 ):
-    sandbox_provider.run_command.return_value = make_git_result(
-        " M z_file.py\x00"
-        " M a_file.py\x00"
-    )
+    sandbox_provider.run_command.return_value = make_git_result(" M z_file.py\x00 M a_file.py\x00")
     sandbox_provider.file_exists.return_value = True
 
     sandbox_provider.read_file.side_effect = [
@@ -450,10 +424,7 @@ def test_capture_hashes_files_in_sorted_order(
         ("z_file.py", "z" * 64),
     )
 
-    assert [
-        call.args[1]
-        for call in sandbox_provider.read_file.call_args_list
-    ] == [
+    assert [call.args[1] for call in sandbox_provider.read_file.call_args_list] == [
         "repository/a_file.py",
         "repository/z_file.py",
     ]
@@ -469,9 +440,7 @@ def test_git_snapshot_never_contains_workspace_prefix(
     sandbox_provider,
     sandbox_session,
 ):
-    sandbox_provider.run_command.return_value = make_git_result(
-        " M src/auth.py\x00"
-    )
+    sandbox_provider.run_command.return_value = make_git_result(" M src/auth.py\x00")
     sandbox_provider.file_exists.return_value = True
     sandbox_provider.read_file.return_value = make_file_result(
         "repository/src/auth.py",
@@ -481,9 +450,6 @@ def test_git_snapshot_never_contains_workspace_prefix(
     result = collector.capture(sandbox_session)
 
     assert "src/auth.py" in result.modified_files
-    assert all(
-        not file_path.startswith("repository/")
-        for file_path in result.modified_files
-    )
+    assert all(not file_path.startswith("repository/") for file_path in result.modified_files)
 
     assert result.file_hashes == (("src/auth.py", "f" * 64),)

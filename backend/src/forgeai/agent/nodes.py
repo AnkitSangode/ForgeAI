@@ -1,25 +1,19 @@
-
 from forgeai.agent.coder import CoderAgent
 from forgeai.agent.coder_schema import CoderResponse
 from forgeai.agent.planner import PlannerAgent
 from forgeai.agent.researcher import ResearcherAgent
 from forgeai.agent.researcher_schema import ResearchResponse
 from forgeai.agent.reviewer import ReviewerAgent
-from forgeai.agent.reviewer_schema import ReviewResponse
 from forgeai.agent.schemas import PlanResponse
 from forgeai.agent.state import ForgeAgentState
-
 from forgeai.application.repository_clone_service import (
     RepositoryCloneService,
 )
-
 from forgeai.execution.sandbox.base import (
     SandboxProvider,
     SandboxSession,
 )
-
 from forgeai.llm.exceptions import LLMError
-
 from forgeai.services.repository_context_builder import (
     RepositoryContextBuilder,
 )
@@ -43,9 +37,7 @@ def get_sandbox_session(
     sandbox_id = state.get("sandbox_id")
 
     if not sandbox_id:
-        raise ValueError(
-            "Sandbox ID is missing from the agent state."
-        )
+        raise ValueError("Sandbox ID is missing from the agent state.")
 
     return sandbox_provider.connect(sandbox_id)
 
@@ -73,8 +65,7 @@ def prepare_task_node(state: ForgeAgentState) -> dict:
         "repository_url": repository_url,
         "repository_path": "repository",
         "repository_context": (
-            f"Target repository: {repository_url}\n"
-            f"Engineering task: {description}"
+            f"Target repository: {repository_url}\nEngineering task: {description}"
         ),
         "status": "in_progress",
         "error": "",
@@ -156,10 +147,7 @@ def create_repository_inspection_node(
                     "repository_files": [],
                     "repository_truncated": False,
                     "status": "failed",
-                    "error": (
-                        result.error
-                        or "Repository inspection failed."
-                    ),
+                    "error": (result.error or "Repository inspection failed."),
                 }
 
             return {
@@ -232,15 +220,11 @@ def create_repository_context_node(
                     "repository_context_files": context_files,
                     "repository_context_status": result.status,
                     "repository_context_bytes": result.total_bytes,
-                    "repository_context_skipped_files": (
-                        result.skipped_files
-                    ),
+                    "repository_context_skipped_files": (result.skipped_files),
                     "repository_context_errors": result.errors,
                     "status": "failed",
                     "error": (
-                        result.errors[0]
-                        if result.errors
-                        else "Unable to build repository context."
+                        result.errors[0] if result.errors else "Unable to build repository context."
                     ),
                 }
 
@@ -248,9 +232,7 @@ def create_repository_context_node(
                 "repository_context_files": context_files,
                 "repository_context_status": result.status,
                 "repository_context_bytes": result.total_bytes,
-                "repository_context_skipped_files": (
-                    result.skipped_files
-                ),
+                "repository_context_skipped_files": (result.skipped_files),
                 "repository_context_errors": result.errors,
                 "status": "context_built",
                 "error": "",
@@ -259,9 +241,7 @@ def create_repository_context_node(
         except Exception as error:
             return {
                 "status": "failed",
-                "error": (
-                    f"Repository context building failed: {error}"
-                ),
+                "error": (f"Repository context building failed: {error}"),
             }
 
     return build_context_node
@@ -277,10 +257,7 @@ def create_planner_node(planner_agent: PlannerAgent):
         context_parts = []
 
         for file in state.get("repository_context_files", []):
-            context_parts.append(
-                f"FILE: {file['file_path']}\n"
-                f"CONTENT:\n{file['content']}"
-            )
+            context_parts.append(f"FILE: {file['file_path']}\nCONTENT:\n{file['content']}")
 
         repository_context = "\n\n".join(context_parts)
 
@@ -333,9 +310,7 @@ def create_researcher_node(researcher_agent: ResearcherAgent):
         if not plan_data:
             return {
                 "status": "failed",
-                "error": (
-                    "Researcher cannot run because no plan is available."
-                ),
+                "error": ("Researcher cannot run because no plan is available."),
             }
 
         repository_context_files = state.get(
@@ -346,10 +321,7 @@ def create_researcher_node(researcher_agent: ResearcherAgent):
         if not repository_context_files:
             return {
                 "status": "failed",
-                "error": (
-                    "Researcher cannot run because repository "
-                    "context is unavailable."
-                ),
+                "error": ("Researcher cannot run because repository context is unavailable."),
             }
 
         try:
@@ -407,10 +379,7 @@ def create_coder_node(coder_agent: CoderAgent):
         if not repository_context_files:
             return {
                 "status": "failed",
-                "error": (
-                    "Coder cannot run because repository "
-                    "context is unavailable."
-                ),
+                "error": ("Coder cannot run because repository context is unavailable."),
             }
 
         try:
@@ -464,17 +433,13 @@ def create_reviewer_node(reviewer_agent: ReviewerAgent):
         if not research_data:
             return {
                 "status": "failed",
-                "error": (
-                    "Reviewer cannot run because no research is available."
-                ),
+                "error": ("Reviewer cannot run because no research is available."),
             }
 
         if not code_changes_data:
             return {
                 "status": "failed",
-                "error": (
-                    "Reviewer cannot run because no code changes are available."
-                ),
+                "error": ("Reviewer cannot run because no code changes are available."),
             }
 
         repository_context_files = state.get(
@@ -485,10 +450,7 @@ def create_reviewer_node(reviewer_agent: ReviewerAgent):
         if not repository_context_files:
             return {
                 "status": "failed",
-                "error": (
-                    "Reviewer cannot run because repository "
-                    "context is unavailable."
-                ),
+                "error": ("Reviewer cannot run because repository context is unavailable."),
             }
 
         try:
@@ -513,12 +475,10 @@ def create_reviewer_node(reviewer_agent: ReviewerAgent):
 
                 for index, finding in enumerate(review.findings, start=1):
                     feedback_parts.append(
-                        (
-                            f"{index}. Severity: {finding.severity}\n"
-                            f"File: {finding.file_path}\n"
-                            f"Issue: {finding.description}\n"
-                            f"Recommendation: {finding.recommendation}"
-                        )
+                        f"{index}. Severity: {finding.severity}\n"
+                        f"File: {finding.file_path}\n"
+                        f"Issue: {finding.description}\n"
+                        f"Recommendation: {finding.recommendation}"
                     )
 
                 review_feedback = "\n\n".join(feedback_parts)

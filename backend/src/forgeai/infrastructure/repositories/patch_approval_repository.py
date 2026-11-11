@@ -4,20 +4,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from forgeai.domain.patch_approval import (
-    ApprovalStatus,
     PatchApproval,
+    PatchApprovalStatus,
 )
 from forgeai.domain.repositories.patch_approval_repository import (
     PatchApprovalRepository,
 )
-from forgeai.infrastructure.models.patch_approval import (
-    PatchApprovalModel,
-)
+from forgeai.infrastructure.models.patch_approval import PatchApprovalModel
 
 
 class SQLAlchemyPatchApprovalRepository(PatchApprovalRepository):
-    """Persists patch approval records using SQLAlchemy."""
-
     def __init__(self, session: Session) -> None:
         self.session = session
 
@@ -25,9 +21,10 @@ class SQLAlchemyPatchApprovalRepository(PatchApprovalRepository):
         model = PatchApprovalModel(
             id=UUID(approval.approval_id),
             task_id=UUID(approval.task_id),
+            agent_run_id=(UUID(approval.agent_run_id) if approval.agent_run_id else None),
             patch_sha256=approval.patch_sha256,
             status=approval.status.value,
-            approved_by=approval.approved_by,
+            approved_by=(UUID(approval.approved_by) if approval.approved_by else None),
             decided_at=approval.decided_at,
             consumed_at=approval.consumed_at,
         )
@@ -35,14 +32,12 @@ class SQLAlchemyPatchApprovalRepository(PatchApprovalRepository):
         self.session.add(model)
         self.session.flush()
 
-        return approval
+        return self._to_domain(model)
 
-    def get_by_id(
-        self,
-        approval_id: UUID,
-    ) -> PatchApproval | None:
-        statement = select(PatchApprovalModel).where(PatchApprovalModel.id == approval_id)
-        model = self.session.scalar(statement)
+    def get_by_id(self, approval_id: UUID) -> PatchApproval | None:
+        model = self.session.scalar(
+            select(PatchApprovalModel).where(PatchApprovalModel.id == approval_id)
+        )
 
         return self._to_domain(model) if model else None
 
@@ -50,10 +45,9 @@ class SQLAlchemyPatchApprovalRepository(PatchApprovalRepository):
         self,
         approval_id: UUID,
     ) -> PatchApproval | None:
-        statement = (
+        model = self.session.scalar(
             select(PatchApprovalModel).where(PatchApprovalModel.id == approval_id).with_for_update()
         )
-        model = self.session.scalar(statement)
 
         return self._to_domain(model) if model else None
 
@@ -67,22 +61,23 @@ class SQLAlchemyPatchApprovalRepository(PatchApprovalRepository):
             raise ValueError("Patch approval does not exist.")
 
         model.status = approval.status.value
-        model.approved_by = approval.approved_by
+        model.approved_by = UUID(approval.approved_by) if approval.approved_by else None
         model.decided_at = approval.decided_at
         model.consumed_at = approval.consumed_at
 
         self.session.flush()
 
-        return approval
+        return self._to_domain(model)
 
     @staticmethod
     def _to_domain(model: PatchApprovalModel) -> PatchApproval:
         return PatchApproval(
             approval_id=str(model.id),
             task_id=str(model.task_id),
+            agent_run_id=(str(model.agent_run_id) if model.agent_run_id else None),
             patch_sha256=model.patch_sha256,
-            status=ApprovalStatus(model.status),
-            approved_by=model.approved_by,
+            status=PatchApprovalStatus(model.status),
+            approved_by=(str(model.approved_by) if model.approved_by else None),
             decided_at=model.decided_at,
             consumed_at=model.consumed_at,
         )

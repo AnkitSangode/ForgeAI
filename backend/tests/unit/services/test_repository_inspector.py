@@ -1,4 +1,3 @@
-
 from unittest.mock import Mock
 
 import pytest
@@ -8,8 +7,6 @@ from forgeai.execution.sandbox.base import (
     SandboxSession,
 )
 from forgeai.services.repository_inspector import (
-    IMPORTANT_FILES,
-    MAX_REPOSITORY_FILES,
     SandboxRepositoryInspector,
 )
 
@@ -29,9 +26,7 @@ def sandbox_provider():
 
 @pytest.fixture
 def inspector(sandbox_provider):
-    return SandboxRepositoryInspector(
-        sandbox_provider=sandbox_provider
-    )
+    return SandboxRepositoryInspector(sandbox_provider=sandbox_provider)
 
 
 def make_command_result(stdout="", exit_code=0, stderr=""):
@@ -49,10 +44,7 @@ def test_inspect_valid_repository(
     sandbox_session,
 ):
     sandbox_provider.run_command.return_value = make_command_result(
-        stdout=(
-            "repository/README.md\x00"
-            "repository/requirements.txt\x00"
-        )
+        stdout=("repository/README.md\x00repository/requirements.txt\x00")
     )
 
     result = inspector.inspect(sandbox_session)
@@ -79,10 +71,7 @@ def test_inspect_rejects_invalid_repository_path(
 
     assert result.status == "unavailable"
     assert result.files == []
-    assert (
-        result.error
-        == "Repository path must be the configured repository directory."
-    )
+    assert result.error == "Repository path must be the configured repository directory."
 
     sandbox_provider.run_command.assert_not_called()
 
@@ -101,11 +90,7 @@ def test_inspect_handles_command_failure(
 
     assert result.status == "unavailable"
     assert result.files == []
-    assert (
-        result.error
-        == "Repository inspection failed: "
-        "Repository directory does not exist."
-    )
+    assert result.error == "Repository inspection failed: Repository directory does not exist."
 
 
 def test_inspect_handles_sandbox_exception(
@@ -113,18 +98,13 @@ def test_inspect_handles_sandbox_exception(
     sandbox_provider,
     sandbox_session,
 ):
-    sandbox_provider.run_command.side_effect = RuntimeError(
-        "Sandbox connection failed."
-    )
+    sandbox_provider.run_command.side_effect = RuntimeError("Sandbox connection failed.")
 
     result = inspector.inspect(sandbox_session)
 
     assert result.status == "unavailable"
     assert result.files == []
-    assert (
-        result.error
-        == "Repository inspection failed: Sandbox connection failed."
-    )
+    assert result.error == "Repository inspection failed: Sandbox connection failed."
 
 
 def test_inspect_excludes_unnecessary_directories(
@@ -135,9 +115,7 @@ def test_inspect_excludes_unnecessary_directories(
     # The sandbox find command is responsible for excluding these
     # directories. Simulate its output after exclusions.
     sandbox_provider.run_command.return_value = make_command_result(
-        stdout=(
-            "repository/src/main.py\x00"
-        )
+        stdout=("repository/src/main.py\x00")
     )
 
     result = inspector.inspect(sandbox_session)
@@ -162,10 +140,7 @@ def test_inspect_nested_directories(
     sandbox_session,
 ):
     sandbox_provider.run_command.return_value = make_command_result(
-        stdout=(
-            "repository/src/services/auth.py\x00"
-            "repository/src/services/user.py\x00"
-        )
+        stdout=("repository/src/services/auth.py\x00repository/src/services/user.py\x00")
     )
 
     result = inspector.inspect(sandbox_session)
@@ -214,10 +189,7 @@ def test_inspect_truncates_large_repository(
         max_repository_files=3,
     )
 
-    files = [
-        f"repository/file_{index}.txt"
-        for index in range(4)
-    ]
+    files = [f"repository/file_{index}.txt" for index in range(4)]
 
     files.append("repository/README.md")
 
@@ -248,9 +220,7 @@ def test_inspect_rejects_unsafe_sandbox_paths(
     sandbox_session,
     unsafe_path,
 ):
-    sandbox_provider.run_command.return_value = make_command_result(
-        stdout=f"{unsafe_path}\x00"
-    )
+    sandbox_provider.run_command.return_value = make_command_result(stdout=f"{unsafe_path}\x00")
 
     result = inspector.inspect(sandbox_session)
 

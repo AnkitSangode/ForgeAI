@@ -1,4 +1,3 @@
-
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 from uuid import UUID, uuid4
@@ -49,7 +48,6 @@ def sample_run() -> AgentRun:
 
 
 class TestCreateRun:
-
     def test_create_run_success(
         self,
         service: AgentRunService,
@@ -74,9 +72,7 @@ class TestCreateRun:
         mock_session: MagicMock,
         mock_repository: MagicMock,
     ) -> None:
-        mock_repository.create.side_effect = RuntimeError(
-            "Database insertion failed"
-        )
+        mock_repository.create.side_effect = RuntimeError("Database insertion failed")
 
         with pytest.raises(RuntimeError, match="Database insertion failed"):
             service.create_run(str(uuid4()))
@@ -86,7 +82,6 @@ class TestCreateRun:
 
 
 class TestGetRun:
-
     def test_get_run_success(
         self,
         service: AgentRunService,
@@ -98,9 +93,7 @@ class TestGetRun:
         result = service.get_run(sample_run.id)
 
         assert result == sample_run
-        mock_repository.get_by_id.assert_called_once_with(
-            UUID(sample_run.id)
-        )
+        mock_repository.get_by_id.assert_called_once_with(UUID(sample_run.id))
 
     def test_get_run_not_found(
         self,
@@ -115,7 +108,6 @@ class TestGetRun:
 
 
 class TestGetRunByThreadId:
-
     def test_get_run_by_thread_id_success(
         self,
         service: AgentRunService,
@@ -127,9 +119,7 @@ class TestGetRunByThreadId:
         result = service.get_run_by_thread_id(sample_run.thread_id)
 
         assert result == sample_run
-        mock_repository.get_by_thread_id.assert_called_once_with(
-            sample_run.thread_id
-        )
+        mock_repository.get_by_thread_id.assert_called_once_with(sample_run.thread_id)
 
     def test_get_run_by_thread_id_not_found(
         self,
@@ -146,7 +136,6 @@ class TestGetRunByThreadId:
 
 
 class TestUpdateStatus:
-
     def test_update_status_success(
         self,
         service: AgentRunService,
@@ -195,9 +184,7 @@ class TestUpdateStatus:
         sample_run: AgentRun,
     ) -> None:
         mock_repository.get_by_id.return_value = sample_run
-        mock_repository.update.side_effect = RuntimeError(
-            "Database update failed"
-        )
+        mock_repository.update.side_effect = RuntimeError("Database update failed")
 
         with pytest.raises(RuntimeError, match="Database update failed"):
             service.update_status(

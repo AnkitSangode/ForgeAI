@@ -1,4 +1,3 @@
-
 from unittest.mock import Mock
 
 import pytest
@@ -166,9 +165,7 @@ def test_unauthorized_path_is_rejected(
     repository_context,
     allowed_paths,
 ):
-    patch_validator.validate.side_effect = PatchValidationError(
-        "Patch target is not authorized."
-    )
+    patch_validator.validate.side_effect = PatchValidationError("Patch target is not authorized.")
 
     with pytest.raises(PatchValidationError):
         service.apply(
@@ -189,9 +186,7 @@ def test_invalid_unified_diff_is_rejected(
     repository_context,
     allowed_paths,
 ):
-    patch_validator.validate.side_effect = PatchValidationError(
-        "Unified diff contains no hunks."
-    )
+    patch_validator.validate.side_effect = PatchValidationError("Unified diff contains no hunks.")
 
     with pytest.raises(PatchValidationError):
         service.apply(
@@ -321,22 +316,12 @@ def test_build_patch_combines_multiple_file_diffs():
     changes = [
         Mock(
             file_path="src/auth.py",
-            unified_diff=(
-                "--- a/src/auth.py\n"
-                "+++ b/src/auth.py\n"
-                "@@ -1 +1 @@\n"
-                "-old\n"
-                "+new\n"
-            ),
+            unified_diff=("--- a/src/auth.py\n+++ b/src/auth.py\n@@ -1 +1 @@\n-old\n+new\n"),
         ),
         Mock(
             file_path="src/database.py",
             unified_diff=(
-                "--- a/src/database.py\n"
-                "+++ b/src/database.py\n"
-                "@@ -1 +1 @@\n"
-                "-old_db\n"
-                "+new_db\n"
+                "--- a/src/database.py\n+++ b/src/database.py\n@@ -1 +1 @@\n-old_db\n+new_db\n"
             ),
         ),
     ]
@@ -408,9 +393,7 @@ def test_git_commands_target_cloned_repository(
 
     command = sandbox_provider.run_command.call_args.kwargs["command"]
 
-    assert command == (
-        f"git -C {REPOSITORY_ROOT} rev-parse --is-inside-work-tree"
-    )
+    assert command == (f"git -C {REPOSITORY_ROOT} rev-parse --is-inside-work-tree")
 
 
 # ---------------------------------------------------------
@@ -466,10 +449,7 @@ def test_check_patch_succeeds(
 
     sandbox_provider.run_command.assert_called_once_with(
         session=sandbox_session,
-        command=(
-            "git -C repository "
-            "apply --check ../.forgeai-current.patch"
-        ),
+        command=("git -C repository apply --check ../.forgeai-current.patch"),
         timeout_seconds=30,
     )
 
@@ -512,10 +492,7 @@ def test_apply_patch_succeeds(
 
     sandbox_provider.run_command.assert_called_once_with(
         session=sandbox_session,
-        command=(
-            "git -C repository "
-            "apply ../.forgeai-current.patch"
-        ),
+        command=("git -C repository apply ../.forgeai-current.patch"),
         timeout_seconds=30,
     )
 
@@ -555,9 +532,7 @@ def test_apply_stops_when_validation_fails(
     repository_context,
     allowed_paths,
 ):
-    patch_validator.validate.side_effect = PatchValidationError(
-        "Invalid patch."
-    )
+    patch_validator.validate.side_effect = PatchValidationError("Invalid patch.")
 
     with pytest.raises(PatchValidationError):
         service.apply(
@@ -581,9 +556,7 @@ def test_apply_stops_when_integrity_verification_fails(
     repository_context,
     allowed_paths,
 ):
-    integrity_verifier.verify.side_effect = FileIntegrityError(
-        "Original file has changed."
-    )
+    integrity_verifier.verify.side_effect = FileIntegrityError("Original file has changed.")
 
     with pytest.raises(FileIntegrityError):
         service.apply(
@@ -792,9 +765,7 @@ def test_apply_does_not_report_success_when_patch_cleanup_fails(
 ):
     sandbox_provider.run_command.side_effect = successful_git_commands
     sandbox_provider.file_exists.return_value = True
-    sandbox_provider.delete_file.side_effect = PermissionError(
-        "Permission denied"
-    )
+    sandbox_provider.delete_file.side_effect = PermissionError("Permission denied")
 
     with pytest.raises(
         PatchApplicationError,

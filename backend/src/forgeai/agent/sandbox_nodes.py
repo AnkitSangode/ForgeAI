@@ -1,4 +1,3 @@
-
 from forgeai.agent.state import ForgeAgentState
 from forgeai.execution.sandbox.base import SandboxProvider
 
@@ -16,9 +15,7 @@ def create_sandbox_node(
         session = None
 
         try:
-            session = sandbox_provider.create(
-                timeout_seconds=timeout_seconds
-            )
+            session = sandbox_provider.create(timeout_seconds=timeout_seconds)
 
             return {
                 "sandbox_id": session.sandbox_id,

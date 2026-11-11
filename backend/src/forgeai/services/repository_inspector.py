@@ -8,7 +8,6 @@ from forgeai.services.repository_inspection_result import (
     RepositoryInspectionResult,
 )
 
-
 EXCLUDED_DIRECTORIES = {
     ".git",
     ".venv",
@@ -45,9 +44,7 @@ class SandboxRepositoryInspector:
         max_repository_files: int = MAX_REPOSITORY_FILES,
     ) -> None:
         if max_repository_files <= 0:
-            raise ValueError(
-                "Maximum repository file count must be positive."
-            )
+            raise ValueError("Maximum repository file count must be positive.")
 
         self.sandbox_provider = sandbox_provider
         self.max_repository_files = max_repository_files
@@ -66,13 +63,9 @@ class SandboxRepositoryInspector:
                 error="Repository path must be the configured repository directory.",
             )
 
-        excluded_names = " ".join(
-            f"-name {name}" for name in sorted(EXCLUDED_DIRECTORIES)
-        )
+        excluded_names = " ".join(f"-name {name}" for name in sorted(EXCLUDED_DIRECTORIES))
 
-        prune_expression = " -o ".join(
-            f"-name {name}" for name in sorted(EXCLUDED_DIRECTORIES)
-        )
+        prune_expression = " -o ".join(f"-name {name}" for name in sorted(EXCLUDED_DIRECTORIES))
 
         command = (
             "find repository "
@@ -108,13 +101,9 @@ class SandboxRepositoryInspector:
                 ),
             )
 
-            truncated = (
-                len(prioritized_files) > self.max_repository_files
-            )
+            truncated = len(prioritized_files) > self.max_repository_files
 
-            selected_files = prioritized_files[
-                : self.max_repository_files
-            ]
+            selected_files = prioritized_files[: self.max_repository_files]
 
             return RepositoryInspectionResult(
                 status="available",
@@ -147,9 +136,7 @@ class SandboxRepositoryInspector:
                 or path.parts[0] != "repository"
                 or any(part in {"", ".", ".."} for part in path.parts)
             ):
-                raise ValueError(
-                    f"Sandbox returned an invalid repository path: {raw_path}"
-                )
+                raise ValueError(f"Sandbox returned an invalid repository path: {raw_path}")
 
             relative_path = PurePosixPath(*path.parts[1:])
 

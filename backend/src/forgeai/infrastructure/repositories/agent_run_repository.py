@@ -1,5 +1,3 @@
-
-from dataclasses import replace
 from uuid import UUID
 
 from sqlalchemy import select
@@ -13,7 +11,6 @@ from forgeai.infrastructure.models.agent_run import AgentRun as AgentRunModel
 
 
 class SQLAlchemyAgentRunRepository(AgentRunRepository):
-
     def __init__(self, session: Session) -> None:
         self.session = session
 
@@ -33,17 +30,13 @@ class SQLAlchemyAgentRunRepository(AgentRunRepository):
         return run
 
     def get_by_id(self, run_id: UUID) -> AgentRun | None:
-        statement = select(AgentRunModel).where(
-            AgentRunModel.id == run_id
-        )
+        statement = select(AgentRunModel).where(AgentRunModel.id == run_id)
         model = self.session.scalar(statement)
 
         return self._to_domain(model) if model else None
 
     def get_by_thread_id(self, thread_id: str) -> AgentRun | None:
-        statement = select(AgentRunModel).where(
-            AgentRunModel.thread_id == thread_id
-        )
+        statement = select(AgentRunModel).where(AgentRunModel.thread_id == thread_id)
         model = self.session.scalar(statement)
 
         return self._to_domain(model) if model else None

@@ -1,4 +1,3 @@
-
 import pytest
 
 from forgeai.execution.repository_paths import (
@@ -7,17 +6,11 @@ from forgeai.execution.repository_paths import (
 
 
 def test_resolves_repository_file_path():
-    assert (
-        resolve_repository_file_path("src/main.py")
-        == "repository/src/main.py"
-    )
+    assert resolve_repository_file_path("src/main.py") == "repository/src/main.py"
 
 
 def test_resolves_nested_repository_path():
-    assert (
-        resolve_repository_file_path("src/services/auth.py")
-        == "repository/src/services/auth.py"
-    )
+    assert resolve_repository_file_path("src/services/auth.py") == "repository/src/services/auth.py"
 
 
 @pytest.mark.parametrize(

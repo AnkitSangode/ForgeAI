@@ -104,7 +104,6 @@ def test_get_approval_not_found(app, client, reviewer, monkeypatch):
     assert response.status_code == 404
 
 
-
 def test_reviewer_can_approve(
     app,
     client,
@@ -154,7 +153,6 @@ def test_reviewer_can_approve(
     assert response.json()["approved_by"] == str(reviewer.id)
 
 
-
 def test_reviewer_can_reject(app, client, reviewer, pending_approval, monkeypatch):
     app.dependency_overrides[require_reviewer] = lambda: reviewer
 
@@ -185,9 +183,7 @@ def test_reviewer_can_reject(app, client, reviewer, pending_approval, monkeypatc
     assert response.json()["status"] == "rejected"
 
 
-def test_already_decided_approval_returns_409(
-    app, client, reviewer, pending_approval, monkeypatch
-):
+def test_already_decided_approval_returns_409(app, client, reviewer, pending_approval, monkeypatch):
     app.dependency_overrides[require_reviewer] = lambda: reviewer
 
     def fake_decide_approval(self, approval_id, approved, actor_id):

@@ -118,9 +118,7 @@ def test_build_preserves_unavailable_file_errors(
     assert result.status == "partial"
     assert len(result.files) == 1
     assert result.skipped_files == ["src/missing.py"]
-    assert result.errors == [
-        "src/missing.py: File does not exist."
-    ]
+    assert result.errors == ["src/missing.py: File does not exist."]
 
 
 def test_build_enforces_context_file_limit(

@@ -1,4 +1,3 @@
-
 from unittest.mock import Mock
 
 import pytest
@@ -41,9 +40,7 @@ def plan() -> PlanResponse:
                 expected_output="Identify the faulty validation condition.",
             )
         ],
-        success_criteria=[
-            "Invalid credentials must be rejected correctly."
-        ],
+        success_criteria=["Invalid credentials must be rejected correctly."],
     )
 
 
