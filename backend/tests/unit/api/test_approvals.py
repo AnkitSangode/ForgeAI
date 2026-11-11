@@ -10,7 +10,7 @@ from forgeai.api.dependencies.auth import get_current_user
 from forgeai.api.dependencies.authorization import require_reviewer
 from forgeai.application.patch_approval_service import (
     ApprovalAlreadyDecidedError,
-    ApprovalNotFoundError,
+    PatchApprovalNotFoundError,
     PatchApprovalService,
 )
 from forgeai.domain.patch_approval import ApprovalStatus
@@ -62,6 +62,7 @@ def pending_approval():
         "approval_id": str(uuid4()),
         "task_id": str(uuid4()),
         "patch_sha256": "a" * 64,
+        "agent_run_id": str(uuid4()),
         "status": ApprovalStatus.PENDING,
         "approved_by": None,
         "decided_at": None,
@@ -95,7 +96,7 @@ def test_get_approval_not_found(app, client, reviewer, monkeypatch):
     app.dependency_overrides[get_current_user] = lambda: reviewer
 
     def fake_get_approval(self, approval_id):
-        raise ApprovalNotFoundError("Approval not found")
+        raise PatchApprovalNotFoundError("Approval not found")
 
     monkeypatch.setattr(PatchApprovalService, "get_approval", fake_get_approval)
 
@@ -207,7 +208,7 @@ def test_decision_approval_not_found(app, client, reviewer, monkeypatch):
     app.dependency_overrides[require_reviewer] = lambda: reviewer
 
     def fake_decide_approval(self, approval_id, approved, actor_id):
-        raise ApprovalNotFoundError("Not found")
+        raise PatchApprovalNotFoundError("Not found")
 
     monkeypatch.setattr(
         PatchApprovalService,

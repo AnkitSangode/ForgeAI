@@ -17,7 +17,36 @@ class AgentRunNotFoundError(Exception):
     pass
 
 
+class InvalidAgentRunTransitionError(ValueError):
+    """Raised when an agent run attempts an invalid status transition."""
+
+
 class AgentRunService:
+
+    ALLOWED_TRANSITIONS = {
+        AgentRunStatus.PENDING: {
+            AgentRunStatus.RUNNING,
+            AgentRunStatus.FAILED,
+        },
+        AgentRunStatus.RUNNING: {
+            AgentRunStatus.AWAITING_APPROVAL,
+            AgentRunStatus.REJECTED,
+            AgentRunStatus.FAILED,
+        },
+        AgentRunStatus.AWAITING_APPROVAL: {
+            AgentRunStatus.EXECUTING,
+            AgentRunStatus.REJECTED,
+            AgentRunStatus.FAILED,
+        },
+        AgentRunStatus.EXECUTING: {
+            AgentRunStatus.SUCCEEDED,
+            AgentRunStatus.FAILED,
+        },
+        AgentRunStatus.SUCCEEDED: set(),
+        AgentRunStatus.REJECTED: set(),
+        AgentRunStatus.FAILED: set(),
+    }
+
     def __init__(
         self,
         session: Session,
@@ -68,6 +97,18 @@ class AgentRunService:
 
             if run is None:
                 raise AgentRunNotFoundError(f"Agent run '{run_id}' was not found.")
+
+            # Allow an idempotent request without another database write.
+            if run.status == status:
+                return run
+
+            allowed_statuses = self.ALLOWED_TRANSITIONS[run.status]
+
+            if status not in allowed_statuses:
+                raise InvalidAgentRunTransitionError(
+                    f"Cannot transition agent run from "
+                    f"'{run.status.value}' to '{status.value}'."
+                )
 
             updated_run = replace(
                 run,

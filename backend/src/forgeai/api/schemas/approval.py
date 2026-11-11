@@ -19,6 +19,7 @@ class ApprovalRead(BaseModel):
 
     approval_id: UUID
     task_id: UUID
+    agent_run_id: UUID | None
     patch_sha256: str
     status: str
     approved_by: str | None

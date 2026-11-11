@@ -1,3 +1,4 @@
+
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -7,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     String,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,6 +24,11 @@ class PatchApprovalModel(Base):
             name="ck_patch_approvals_status",
         ),
         Index("ix_patch_approvals_task_id", "task_id"),
+        UniqueConstraint(
+            "agent_run_id",
+            "patch_sha256",
+            name="uq_patch_approvals_run_patch",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(

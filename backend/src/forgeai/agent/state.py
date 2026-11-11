@@ -7,6 +7,7 @@ class ForgeAgentState(TypedDict):
     # Task information
     task_id: str
     task_description: str
+    agent_run_id: str
     repository_url: str
 
     # Repository context
@@ -44,6 +45,15 @@ class ForgeAgentState(TypedDict):
     review: NotRequired[dict[str, Any]]
     review_feedback: NotRequired[str]
     review_attempts: NotRequired[int]
+
+    # Patch preparation
+    patch: NotRequired[str]
+    patch_sha256: NotRequired[str]
+    changed_files: NotRequired[list[str]]
+
+    # Human approval
+    approval_id: NotRequired[str]
+    human_approval_status: NotRequired[str]
 
     # Workflow status
     status: NotRequired[str]

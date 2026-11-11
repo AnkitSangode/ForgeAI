@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from forgeai.domain.patch_approval import (
     PatchApproval,
-    PatchApprovalStatus,
+    ApprovalStatus,
 )
 from forgeai.domain.repositories.patch_approval_repository import (
     PatchApprovalRepository,
@@ -24,7 +24,7 @@ class SQLAlchemyPatchApprovalRepository(PatchApprovalRepository):
             agent_run_id=(UUID(approval.agent_run_id) if approval.agent_run_id else None),
             patch_sha256=approval.patch_sha256,
             status=approval.status.value,
-            approved_by=(UUID(approval.approved_by) if approval.approved_by else None),
+            approved_by=approval.approved_by,
             decided_at=approval.decided_at,
             consumed_at=approval.consumed_at,
         )
@@ -61,7 +61,7 @@ class SQLAlchemyPatchApprovalRepository(PatchApprovalRepository):
             raise ValueError("Patch approval does not exist.")
 
         model.status = approval.status.value
-        model.approved_by = UUID(approval.approved_by) if approval.approved_by else None
+        model.approved_by = approval.approved_by
         model.decided_at = approval.decided_at
         model.consumed_at = approval.consumed_at
 
@@ -76,8 +76,24 @@ class SQLAlchemyPatchApprovalRepository(PatchApprovalRepository):
             task_id=str(model.task_id),
             agent_run_id=(str(model.agent_run_id) if model.agent_run_id else None),
             patch_sha256=model.patch_sha256,
-            status=PatchApprovalStatus(model.status),
+            status=ApprovalStatus(model.status),
             approved_by=(str(model.approved_by) if model.approved_by else None),
             decided_at=model.decided_at,
             consumed_at=model.consumed_at,
         )
+
+    def get_by_run_and_patch(
+        self,
+        agent_run_id: UUID,
+        patch_sha256: str,
+    ) -> PatchApproval | None:
+        """Find an approval for a specific run and patch fingerprint."""
+
+        model = self.session.scalar(
+            select(PatchApprovalModel).where(
+                PatchApprovalModel.agent_run_id == agent_run_id,
+                PatchApprovalModel.patch_sha256 == patch_sha256,
+            )
+        )
+
+        return self._to_domain(model) if model else None

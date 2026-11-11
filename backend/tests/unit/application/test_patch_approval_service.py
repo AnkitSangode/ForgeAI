@@ -12,6 +12,7 @@ from forgeai.application.patch_approval_service import (
 )
 from forgeai.domain.agent_run import AgentRun, AgentRunStatus
 from forgeai.domain.patch_approval import ApprovalStatus, PatchApproval
+from forgeai.domain.patch_approval import ApprovalStatus
 
 
 @pytest.fixture
@@ -230,7 +231,7 @@ def test_decide_approval_success(
     approval_repository,
     approval,
 ):
-    approval_repository.get_by_id.return_value = approval
+    approval_repository.get_by_id_for_update.return_value = approval
     approval_repository.update.side_effect = lambda value: value
 
     result = service.decide_approval(
@@ -254,7 +255,7 @@ def test_decide_approval_rejection(
     approval_repository,
     approval,
 ):
-    approval_repository.get_by_id.return_value = approval
+    approval_repository.get_by_id_for_update.return_value = approval
     approval_repository.update.side_effect = lambda value: value
 
     result = service.decide_approval(
@@ -306,7 +307,7 @@ def test_decide_approval_rejects_empty_actor(
     approval_repository,
     approval,
 ):
-    approval_repository.get_by_id.return_value = approval
+    approval_repository.get_by_id_for_update.return_value = approval
 
     with pytest.raises(ValueError):
         service.decide_approval(
@@ -325,7 +326,7 @@ def test_decide_approval_rolls_back_on_commit_failure(
     approval_repository,
     approval,
 ):
-    approval_repository.get_by_id.return_value = approval
+    approval_repository.get_by_id_for_update.return_value = approval
     approval_repository.update.side_effect = lambda value: value
     session.commit.side_effect = RuntimeError("Commit failed")
 
@@ -361,7 +362,7 @@ def test_consume_approval_success(
         consumed_at=None,
     )
 
-    approval_repository.get_by_id.return_value = approved_approval
+    approval_repository.get_by_id_for_update.return_value = approved_approval
     approval_repository.update.side_effect = lambda value: value
 
     result = service.consume_approval(
@@ -406,7 +407,7 @@ def test_consume_approval_rejects_mismatched_identity(
         consumed_at=None,
     )
 
-    approval_repository.get_by_id.return_value = approved_approval
+    approval_repository.get_by_id_for_update.return_value = approved_approval
 
     arguments = {
         "approval_id": approval.approval_id,
@@ -430,7 +431,7 @@ def test_consume_approval_rejects_pending_approval(
     approval_repository,
     approval,
 ):
-    approval_repository.get_by_id.return_value = approval
+    approval_repository.get_by_id_for_update.return_value = approval
 
     with pytest.raises(PatchApprovalStateError):
         service.consume_approval(
@@ -461,7 +462,7 @@ def test_consume_approval_rejects_already_consumed_approval(
         consumed_at=datetime.now(UTC),
     )
 
-    approval_repository.get_by_id.return_value = consumed_approval
+    approval_repository.get_by_id_for_update.return_value = consumed_approval
 
     with pytest.raises(PatchApprovalStateError):
         service.consume_approval(
@@ -511,3 +512,100 @@ def test_get_approval_rejects_invalid_uuid(
         service.get_approval("not-a-valid-uuid")
 
     approval_repository.get_by_id.assert_not_called()
+
+
+def test_create_approval_returns_existing_approval(
+    service,
+    approval_repository,
+    agent_run_repository,
+    valid_agent_run,
+):
+    task_id = valid_agent_run.task_id
+    run_id = valid_agent_run.id
+    patch_sha256 = "a" * 64
+
+    existing_approval = PatchApproval(
+        approval_id=str(uuid4()),
+        task_id=task_id,
+        agent_run_id=run_id,
+        patch_sha256=patch_sha256,
+        status=ApprovalStatus.PENDING,
+        approved_by=None,
+        decided_at=None,
+        consumed_at=None,
+    )
+
+    agent_run_repository.get_by_id.return_value = valid_agent_run
+
+    approval_repository.get_by_run_and_patch.return_value = (
+        existing_approval
+    )
+
+    result = service.create_approval(
+        task_id=task_id,
+        agent_run_id=run_id,
+        patch_sha256=patch_sha256,
+    )
+
+    assert result == existing_approval
+
+    approval_repository.create.assert_not_called()
+
+
+def test_create_approval_creates_new_record_when_not_existing(
+    service,
+    approval_repository,
+    agent_run_repository,
+    valid_agent_run,
+):
+    task_id = valid_agent_run.task_id
+    run_id = valid_agent_run.id
+    patch_sha256 = "b" * 64
+
+    agent_run_repository.get_by_id.return_value = valid_agent_run
+    approval_repository.get_by_run_and_patch.return_value = None
+
+    approval_repository.create.side_effect = lambda approval: approval
+
+    result = service.create_approval(
+        task_id=task_id,
+        agent_run_id=run_id,
+        patch_sha256=patch_sha256,
+    )
+
+    assert result.status == ApprovalStatus.PENDING
+    assert result.task_id == task_id
+    assert result.agent_run_id == run_id
+    assert result.patch_sha256 == patch_sha256
+
+    approval_repository.create.assert_called_once()
+
+
+def test_different_patch_creates_separate_approval(
+    service,
+    approval_repository,
+    agent_run_repository,
+    valid_agent_run,
+):
+    task_id = valid_agent_run.task_id
+    run_id = valid_agent_run.id
+
+    agent_run_repository.get_by_id.return_value = valid_agent_run
+    approval_repository.get_by_run_and_patch.return_value = None
+    approval_repository.create.side_effect = lambda approval: approval
+
+    first = service.create_approval(
+        task_id=task_id,
+        agent_run_id=run_id,
+        patch_sha256="a" * 64,
+    )
+
+    second = service.create_approval(
+        task_id=task_id,
+        agent_run_id=run_id,
+        patch_sha256="b" * 64,
+    )
+
+    assert first.patch_sha256 != second.patch_sha256
+    assert approval_repository.create.call_count == 2
+

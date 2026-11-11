@@ -1,3 +1,4 @@
+
 from typing import Annotated
 from uuid import UUID
 
@@ -19,21 +20,31 @@ router = APIRouter(
 
 
 def determine_run_status(result: dict) -> AgentRunStatus:
-    """Determine the persisted run status from the final graph state."""
+    """Determine the terminal status from the graph's final state."""
 
-    if result.get("status") in {"failed", "review_attempts_exhausted"}:
+    result_status = result.get("status")
+
+    if result_status in {"failed", "review_attempts_exhausted"}:
         return AgentRunStatus.FAILED
 
-    review = result.get("review") or {}
-    decision = review.get("decision")
-
-    if decision == "approved":
-        return AgentRunStatus.AWAITING_APPROVAL
-
-    if decision == "rejected":
+    if result_status == "rejected":
         return AgentRunStatus.REJECTED
 
+    if result_status == "succeeded":
+        return AgentRunStatus.SUCCEEDED
+
     return AgentRunStatus.FAILED
+
+
+def is_graph_interrupted(graph, config: dict) -> bool:
+    """Check whether LangGraph is currently paused by an interrupt."""
+
+    snapshot = graph.get_state(config)
+
+    return any(
+        task.interrupts
+        for task in snapshot.tasks
+    )
 
 
 @router.post(
@@ -68,7 +79,7 @@ def start_agent_run(
             detail="Agent graph is not available.",
         )
 
-    # 3. Create a durable AgentRun using an independent session.
+    # 3. Create a durable AgentRun.
     with SessionLocal() as session:
         run_service = AgentRunService(session)
         run = run_service.create_run(str(task.id))
@@ -81,11 +92,12 @@ def start_agent_run(
     # 4. Prepare the initial graph state.
     initial_state = {
         "task_id": str(task.id),
+        "agent_run_id": str(run.id),
         "task_description": task.description,
         "repository_url": task.repository_url,
     }
 
-    # 5. Use the persisted thread ID for LangGraph checkpointing.
+    # 5. Use the persisted thread ID for checkpointing.
     config = {
         "configurable": {
             "thread_id": run.thread_id,
@@ -98,11 +110,16 @@ def start_agent_run(
             config=config,
         )
 
-        final_status = determine_run_status(result)
+        # 6. Detect an actual LangGraph interrupt.
+        if is_graph_interrupted(graph, config):
+            final_status = AgentRunStatus.AWAITING_APPROVAL
+        else:
+            final_status = determine_run_status(result)
 
-        # 6. Persist the final execution status.
+        # 7. Persist the resulting run status.
         with SessionLocal() as session:
             run_service = AgentRunService(session)
+
             updated_run = run_service.update_status(
                 run.id,
                 final_status,
@@ -111,9 +128,10 @@ def start_agent_run(
         return AgentRunRead.model_validate(updated_run)
 
     except Exception as exc:
-        # 7. Persist failure before propagating the error.
+        # 8. Persist failure before propagating the error.
         with SessionLocal() as session:
             run_service = AgentRunService(session)
+
             run_service.update_status(
                 run.id,
                 AgentRunStatus.FAILED,
