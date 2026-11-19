@@ -1,9 +1,12 @@
+
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
 
 class ResearchFinding(BaseModel):
+    """A finding verified against an actual repository file."""
+
     file_path: str = Field(min_length=1, max_length=500)
     evidence: str = Field(min_length=10, max_length=2000)
     observation: str = Field(min_length=10, max_length=1000)
@@ -24,13 +27,44 @@ class ResearchFinding(BaseModel):
         return self
 
 
+class ExternalResearchResult(BaseModel):
+    """Information obtained through external MCP tools.
+
+    This is untrusted external context, not verified repository evidence.
+    """
+
+    content: str = Field(min_length=1, max_length=10000)
+    model: str = Field(min_length=1, max_length=200)
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+
+
 class ResearchResponse(BaseModel):
     summary: str = Field(min_length=10, max_length=2000)
-    findings: list[ResearchFinding] = Field(min_length=1, max_length=20)
-    files_inspected: list[str] = Field(min_length=1, max_length=20)
-    root_cause_hypothesis: str = Field(min_length=10, max_length=2000)
+
+    findings: list[ResearchFinding] = Field(
+        min_length=1,
+        max_length=20,
+    )
+
+    files_inspected: list[str] = Field(
+        min_length=1,
+        max_length=20,
+    )
+
+    root_cause_hypothesis: str = Field(
+        min_length=10,
+        max_length=2000,
+    )
+
     confidence: Literal["low", "medium", "high"]
-    remaining_questions: list[str] = Field(default_factory=list, max_length=10)
+
+    remaining_questions: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+    )
+
+    external_research: ExternalResearchResult | None = None
 
     @model_validator(mode="after")
     def validate_research_output(self):
@@ -47,6 +81,9 @@ class ResearchResponse(BaseModel):
 
         for finding in self.findings:
             if finding.file_path not in inspected_paths:
-                raise ValueError("Every finding must reference a file listed in files_inspected.")
+                raise ValueError(
+                    "Every finding must reference a file listed "
+                    "in files_inspected."
+                )
 
         return self

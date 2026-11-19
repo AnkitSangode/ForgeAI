@@ -20,3 +20,8 @@ class AgentRunRepository(ABC):
     @abstractmethod
     def update(self, run: AgentRun) -> AgentRun:
         raise NotImplementedError
+
+    @abstractmethod
+    def get_by_id_for_update(self, run_id: UUID) -> AgentRun | None:
+        """Retrieve and lock an agent run for a transactional update."""
+        raise NotImplementedError

@@ -47,11 +47,22 @@ def approval_service(session, approval_repository):
 
 
 @pytest.fixture
-def service(session, execution_repository, approval_service):
+def agent_run_repository():
+    return MagicMock()
+
+
+@pytest.fixture
+def service(
+    session,
+    execution_repository,
+    approval_service,
+    agent_run_repository,
+):
     return PatchExecutionService(
         session=session,
         execution_repository=execution_repository,
         approval_service=approval_service,
+        agent_run_repository=agent_run_repository,
     )
 
 

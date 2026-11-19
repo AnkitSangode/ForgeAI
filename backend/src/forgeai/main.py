@@ -1,4 +1,8 @@
+
+import os
+import sys
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
 from fastapi import FastAPI
 from langgraph.checkpoint.postgres import PostgresSaver
@@ -10,17 +14,160 @@ from forgeai.agent.graph import build_agent_graph
 from forgeai.agent.planner import PlannerAgent
 from forgeai.agent.researcher import ResearcherAgent
 from forgeai.agent.reviewer import ReviewerAgent
+
 from forgeai.api.approvals import router as approvals_router
 from forgeai.api.auth import router as auth_router
 from forgeai.api.health import router as health_router
 from forgeai.api.runs import router as runs_router
 from forgeai.api.tasks import router as tasks_router
+
+from forgeai.application.approved_patch_execution_worker import (
+    ApprovedPatchExecutionWorker,
+)
+from forgeai.application.mcp.mcp_connection_service import (
+    MCPConnectionService,
+)
+from forgeai.application.mcp.mcp_research_service import MCPResearchService
+from forgeai.application.mcp.mcp_tool_discovery_service import (
+    MCPToolDiscoveryService,
+)
+from forgeai.application.mcp.mcp_tool_execution_service import (
+    MCPToolExecutionService,
+)
+from forgeai.application.mcp.mcp_tool_policy import MCPToolPolicy
+from forgeai.application.patch_preparation_service import (
+    PatchPreparationService,
+)
+
 from forgeai.core.config import get_settings
+
+from forgeai.execution.file_integrity_verifier import FileIntegrityVerifier
+from forgeai.execution.git_change_verifier import GitChangeVerifier
+from forgeai.execution.git_state_collector import GitStateCollector
+from forgeai.execution.patch_application import PatchApplicationService
+from forgeai.execution.patch_builder import PatchBuilder
+from forgeai.execution.patch_validator import PatchValidator
+from forgeai.execution.post_application_verifier import (
+    PostApplicationVerifier,
+)
 from forgeai.execution.sandbox.e2b_provider import E2BSandboxProvider
+
+from forgeai.infrastructure.mcp import MCPClientManager, MCPServerConfig
+from forgeai.infrastructure.mcp.servers.playwright_server_config import (
+    create_playwright_server_config,
+)
+from forgeai.infrastructure.session import SessionLocal
+
 from forgeai.llm.llm_service import LLMService
+from forgeai.llm.ollama_provider import OllamaProvider
 from forgeai.llm.openai_provider import OpenAIProvider
 
+from forgeai.services.repository_context_result import (
+    RepositoryContextResult,
+    RepositoryFileContext,
+)
+
+from forgeai.telemetry.langfuse_client import LangfuseTelemetry
+
+
 settings = get_settings()
+
+
+def build_mcp_server_configs() -> list[MCPServerConfig]:
+    """Build configurations for all trusted MCP servers."""
+
+    # Preserve the parent process environment.
+    # MCP subprocesses need access to PATH, Python and Node environments.
+    process_env = dict(os.environ)
+
+    if settings.mcp_database_readonly_url is None:
+        raise RuntimeError(
+            "MCP_DATABASE_READONLY_URL must be configured "
+            "when MCP is enabled."
+        )
+
+    process_env["MCP_DATABASE_READONLY_URL"] = (
+        settings.mcp_database_readonly_url.get_secret_value()
+    )
+
+    process_env["MCP_FILESYSTEM_ROOT"] = settings.mcp_filesystem_root
+
+    python_servers = [
+        MCPServerConfig(
+            name="postgres",
+            command=sys.executable,
+            args=(
+                "-m",
+                "forgeai.infrastructure.mcp.servers.postgres_server",
+            ),
+            env=process_env,
+        ),
+        MCPServerConfig(
+            name="filesystem",
+            command=sys.executable,
+            args=(
+                "-m",
+                "forgeai.infrastructure.mcp.servers.filesystem_server",
+            ),
+            env=process_env,
+        ),
+        MCPServerConfig(
+            name="web_search",
+            command=sys.executable,
+            args=(
+                "-m",
+                "forgeai.infrastructure.mcp.servers.web_search_server",
+            ),
+            env=process_env,
+        ),
+    ]
+
+    playwright_config = create_playwright_server_config()
+
+    return [*python_servers, playwright_config]
+
+
+def build_mcp_policy() -> MCPToolPolicy:
+    """Define the MCP servers and tools ForgeAI is permitted to use."""
+
+    return MCPToolPolicy(
+        allowed_servers=frozenset(
+            {
+                "postgres",
+                "filesystem",
+                "web_search",
+                "playwright",
+            }
+        ),
+        allowed_tools={
+            "postgres": frozenset(
+                {
+                    "list_tables",
+                    "describe_table",
+                    "read_records",
+                }
+            ),
+            "filesystem": frozenset(
+                {
+                    "list_files",
+                    "read_file",
+                    "search_files",
+                    "get_file_info",
+                }
+            ),
+            "web_search": frozenset(
+                {
+                    "search_web",
+                }
+            ),
+            "playwright": frozenset(
+                {
+                    "browser_navigate",
+                    "browser_snapshot",
+                }
+            ),
+        },
+    )
 
 
 @asynccontextmanager
@@ -30,19 +177,24 @@ async def lifespan(app: FastAPI):
 
     Startup:
     - Initialize PostgreSQL checkpoint connection pool.
-    - Initialize LangGraph Postgres checkpointer.
+    - Initialize LangGraph PostgreSQL checkpointer.
+    - Initialize Langfuse telemetry.
     - Construct shared LLM and agent dependencies.
-    - Construct the E2B sandbox provider.
+    - Start trusted MCP servers when enabled.
+    - Construct E2B sandbox provider.
     - Compile the agent graph.
 
     Shutdown:
+    - Disconnect MCP servers.
+    - Flush Langfuse telemetry.
     - Close the checkpoint connection pool.
     """
 
     if settings.e2b_api_key is None:
-        raise RuntimeError("E2B_API_KEY must be configured before starting ForgeAI.")
+        raise RuntimeError(
+            "E2B_API_KEY must be configured before starting ForgeAI."
+        )
 
-    # Convert SQLAlchemy's URL into a psycopg-compatible connection string.
     conninfo = (
         make_url(settings.database_url)
         .set(drivername="postgresql")
@@ -57,28 +209,145 @@ async def lifespan(app: FastAPI):
         open=False,
     )
 
+    mcp_connection_service = None
+    mcp_client_manager = None
+    telemetry = None
+
     try:
-        # 1. Open the PostgreSQL connection pool.
+        # 1. Open PostgreSQL connection pool.
         checkpoint_pool.open(wait=True)
 
-        # 2. Initialize the LangGraph PostgreSQL checkpointer.
+        # 2. Initialize LangGraph PostgreSQL checkpointer.
         checkpointer = PostgresSaver(checkpoint_pool)
         checkpointer.setup()
 
-        # 3. Construct one shared LLM service.
-        llm_provider = OpenAIProvider(settings)
-        llm_service = LLMService(provider=llm_provider)
+        # 3. Initialize the configured LLM provider.
+        if settings.llm_provider == "ollama":
+            llm_provider = OllamaProvider(settings)
 
-        # 4. Construct the agents using the shared LLM service.
+        elif settings.llm_provider == "openai":
+            llm_provider = OpenAIProvider(settings)
+
+        else:
+            raise ValueError(
+                f"Unsupported LLM provider: {settings.llm_provider}"
+            )
+
+        # 4. Initialize Langfuse telemetry.
+        # Telemetry is injected into the shared LLM service.
+        telemetry = LangfuseTelemetry(settings)
+
+        llm_service = LLMService(
+            provider=llm_provider,
+            telemetry=telemetry,
+        )
+
+        # 5. Initialize MCP infrastructure.
+        mcp_research_service = None
+
+        if settings.mcp_enabled:
+            mcp_client_manager = MCPClientManager()
+
+            mcp_policy = build_mcp_policy()
+
+            mcp_connection_service = MCPConnectionService(
+                client_manager=mcp_client_manager,
+                policy=mcp_policy,
+            )
+
+            mcp_discovery_service = MCPToolDiscoveryService(
+                client_manager=mcp_client_manager,
+            )
+
+            mcp_execution_service = MCPToolExecutionService(
+                client_manager=mcp_client_manager,
+                discovery_service=mcp_discovery_service,
+                policy=mcp_policy,
+                timeout_seconds=settings.mcp_tool_timeout,
+                max_output_bytes=settings.mcp_max_output_bytes,
+                telemetry=telemetry,
+            )
+
+            # Connect all configured MCP servers.
+            server_configs = build_mcp_server_configs()
+
+            for server_config in server_configs:
+                await mcp_connection_service.connect(server_config)
+
+            # Construct the MCP research coordinator.
+            mcp_research_service = MCPResearchService(
+                llm_service=llm_service,
+                discovery_service=mcp_discovery_service,
+                execution_service=mcp_execution_service,
+                server_names=(
+                    "postgres",
+                    "filesystem",
+                    "web_search",
+                    "playwright",
+                ),
+                max_rounds=settings.mcp_max_rounds,
+            )
+
+        # 6. Construct agents using the shared LLM service.
         planner_agent = PlannerAgent(llm_service)
         researcher_agent = ResearcherAgent(llm_service)
         coder_agent = CoderAgent(llm_service)
         reviewer_agent = ReviewerAgent(llm_service)
 
-        # 5. Construct the sandbox provider.
+        # 7. Construct E2B sandbox provider.
         sandbox_provider = E2BSandboxProvider(settings)
 
-        # 6. Compile the graph with persistent checkpointing.
+        # 8. Construct patch preparation dependencies.
+        patch_validator = PatchValidator()
+
+        patch_preparation_service = PatchPreparationService(
+            patch_validator
+        )
+
+        def repository_context_factory(
+            data: dict,
+        ) -> RepositoryContextResult:
+            return RepositoryContextResult(
+                status=data["status"],
+                files=[
+                    RepositoryFileContext(
+                        file_path=item["file_path"],
+                        content=item["content"],
+                        sha256=item["sha256"],
+                    )
+                    for item in data["files"]
+                ],
+                total_bytes=data["total_bytes"],
+                skipped_files=data["skipped_files"],
+                errors=data["errors"],
+            )
+
+        def execution_worker_factory(execution_service):
+            patch_application_service = PatchApplicationService(
+                sandbox_provider=sandbox_provider,
+                patch_validator=patch_validator,
+                integrity_verifier=FileIntegrityVerifier(
+                    sandbox_provider
+                ),
+                post_application_verifier=PostApplicationVerifier(
+                    sandbox_provider
+                ),
+                git_state_collector=GitStateCollector(
+                    sandbox_provider
+                ),
+                git_change_verifier=GitChangeVerifier(),
+            )
+
+            return ApprovedPatchExecutionWorker(
+                execution_service=execution_service,
+                sandbox_provider=sandbox_provider,
+                patch_application_service=patch_application_service,
+                patch_builder=PatchBuilder,
+                repository_context_factory=repository_context_factory,
+                worker_id=f"forgeai-api-{uuid4()}",
+            )
+
+        # 9. Compile the complete LangGraph workflow.
         graph = build_agent_graph(
             planner_agent=planner_agent,
             researcher_agent=researcher_agent,
@@ -87,18 +356,43 @@ async def lifespan(app: FastAPI):
             sandbox_provider=sandbox_provider,
             sandbox_timeout_seconds=settings.e2b_sandbox_timeout,
             checkpointer=checkpointer,
+            session_factory=SessionLocal,
+            patch_preparation_service=patch_preparation_service,
+            execution_worker_factory=execution_worker_factory,
+            mcp_research_service=mcp_research_service,
+            mcp_max_tool_calls=settings.mcp_max_tool_calls,
         )
 
-        # 7. Make application resources available to API routes.
+        # 10. Expose application resources.
         app.state.graph = graph
+
         app.state.checkpointer = checkpointer
         app.state.checkpoint_pool = checkpoint_pool
+
+        app.state.telemetry = telemetry
+
+        app.state.mcp_enabled = settings.mcp_enabled
+        app.state.mcp_client_manager = mcp_client_manager
+        app.state.mcp_connection_service = mcp_connection_service
+        app.state.mcp_research_service = mcp_research_service
 
         yield
 
     finally:
-        # 8. Release the long-lived database resource.
-        checkpoint_pool.close()
+        # 11. Disconnect MCP servers before closing application resources.
+        try:
+            if mcp_connection_service is not None:
+                await mcp_connection_service.disconnect_all()
+
+        finally:
+            # 12. Flush pending Langfuse events.
+            try:
+                if telemetry is not None:
+                    telemetry.flush()
+
+            finally:
+                # 13. Close the PostgreSQL connection pool.
+                checkpoint_pool.close()
 
 
 app = FastAPI(
@@ -107,6 +401,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+# Register API routers.
 app.include_router(health_router)
 app.include_router(tasks_router)
 app.include_router(auth_router)

@@ -3,6 +3,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import create_engine, pool
 
+import forgeai.infrastructure.models  # noqa: F401 — register ORM tables on Base.metadata
 from forgeai.core.config import get_settings
 from forgeai.infrastructure.base import Base
 

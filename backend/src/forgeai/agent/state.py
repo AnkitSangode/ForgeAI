@@ -50,9 +50,17 @@ class ForgeAgentState(TypedDict):
     patch: NotRequired[str]
     patch_sha256: NotRequired[str]
     changed_files: NotRequired[list[str]]
+    allowed_paths: NotRequired[list[str]]
+    patch_summary: NotRequired[str]
+    tests_to_run: NotRequired[list[str]]
+    patch_risks: NotRequired[list[str]]
+    authorized_new_paths: NotRequired[list[str]]
 
     # Human approval
     approval_id: NotRequired[str]
+    execution_id: NotRequired[str]
+    execution_status: NotRequired[str]
+    execution_result: NotRequired[dict[str, Any]]
     human_approval_status: NotRequired[str]
 
     # Workflow status

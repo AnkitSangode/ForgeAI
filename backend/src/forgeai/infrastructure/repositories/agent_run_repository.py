@@ -65,3 +65,15 @@ class SQLAlchemyAgentRunRepository(AgentRunRepository):
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
+
+
+    def get_by_id_for_update(self, run_id: UUID) -> AgentRun | None:
+        statement = (
+            select(AgentRunModel)
+            .where(AgentRunModel.id == run_id)
+            .with_for_update()
+        )
+
+        model = self.session.scalar(statement)
+
+        return self._to_domain(model) if model else None

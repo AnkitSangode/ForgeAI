@@ -1,3 +1,4 @@
+
 from forgeai.agent.coder import CoderAgent
 from forgeai.agent.coder_schema import CoderResponse
 from forgeai.agent.planner import PlannerAgent
@@ -6,6 +7,15 @@ from forgeai.agent.researcher_schema import ResearchResponse
 from forgeai.agent.reviewer import ReviewerAgent
 from forgeai.agent.schemas import PlanResponse
 from forgeai.agent.state import ForgeAgentState
+from forgeai.application.mcp.mcp_execution_budget import (
+    MCPToolExecutionBudget,
+)
+from forgeai.application.mcp.mcp_research_service import (
+    MCPResearchService,
+)
+from forgeai.application.patch_preparation_service import (
+    PatchPreparationError,
+)
 from forgeai.application.repository_clone_service import (
     RepositoryCloneService,
 )
@@ -16,6 +26,10 @@ from forgeai.execution.sandbox.base import (
 from forgeai.llm.exceptions import LLMError
 from forgeai.services.repository_context_builder import (
     RepositoryContextBuilder,
+)
+from forgeai.services.repository_context_result import (
+    RepositoryContextResult,
+    RepositoryFileContext,
 )
 from forgeai.services.repository_inspector import (
     SandboxRepositoryInspector,
@@ -105,7 +119,7 @@ def create_repository_clone_node(
                 "error": "",
             }
 
-        except Exception as error:
+        except (LLMError, ValueError, OSError, RuntimeError) as error:
             return {
                 "status": "failed",
                 "error": f"Repository cloning failed: {error}",
@@ -158,7 +172,7 @@ def create_repository_inspection_node(
                 "error": "",
             }
 
-        except Exception as error:
+        except (ValueError, OSError, RuntimeError) as error:
             return {
                 "status": "failed",
                 "error": f"Repository inspection failed: {error}",
@@ -238,7 +252,7 @@ def create_repository_context_node(
                 "error": "",
             }
 
-        except Exception as error:
+        except (ValueError, TypeError, OSError, RuntimeError) as error:
             return {
                 "status": "failed",
                 "error": (f"Repository context building failed: {error}"),
@@ -298,19 +312,38 @@ def create_planner_node(planner_agent: PlannerAgent):
     return planner_node
 
 
-def create_researcher_node(researcher_agent: ResearcherAgent):
-    """Create a LangGraph node for repository research."""
 
-    def researcher_node(state: ForgeAgentState) -> dict:
+def create_researcher_node(
+    researcher_agent: ResearcherAgent,
+    mcp_research_service: MCPResearchService | None = None,
+    mcp_max_tool_calls: int = 10,
+):
+    """Create a synchronous or asynchronous Researcher node.
+
+    When MCP is enabled, external research is performed using a
+    task-scoped execution budget.
+
+    Without MCP, the original repository-only research workflow
+    remains available.
+    """
+
+    if isinstance(mcp_max_tool_calls, bool) or mcp_max_tool_calls < 1:
+        raise ValueError("mcp_max_tool_calls must be at least 1.")
+
+    def validate_research_input(state: ForgeAgentState):
+        """Validate the state required by the Researcher."""
+
         if state.get("status") == "failed":
-            return {}
+            return None, None
 
         plan_data = state.get("plan")
 
         if not plan_data:
-            return {
+            return None, {
                 "status": "failed",
-                "error": ("Researcher cannot run because no plan is available."),
+                "error": (
+                    "Researcher cannot run because no plan is available."
+                ),
             }
 
         repository_context_files = state.get(
@@ -319,18 +352,83 @@ def create_researcher_node(researcher_agent: ResearcherAgent):
         )
 
         if not repository_context_files:
-            return {
+            return None, {
                 "status": "failed",
-                "error": ("Researcher cannot run because repository context is unavailable."),
+                "error": (
+                    "Researcher cannot run because repository "
+                    "context is unavailable."
+                ),
             }
 
         try:
             plan = PlanResponse.model_validate(plan_data)
+        except ValueError as error:
+            return None, {
+                "status": "failed",
+                "error": f"Invalid research plan: {error}",
+            }
 
-            research = researcher_agent.research(
+        return (plan, repository_context_files), None
+
+    if mcp_research_service is None:
+
+        # Backward-compatible synchronous mode.
+        def researcher_node(state: ForgeAgentState) -> dict:
+            validated, error_result = validate_research_input(state)
+
+            if error_result is not None:
+                return error_result
+
+            if validated is None:
+                return {}
+
+            plan, repository_context_files = validated
+
+            try:
+                research = researcher_agent.research(
+                    task_description=state["task_description"],
+                    plan=plan,
+                    repository_context_files=repository_context_files,
+                )
+
+                return {
+                    "research": research.model_dump(mode="json"),
+                    "status": "research_completed",
+                    "error": "",
+                }
+
+            except (LLMError, ValueError, RuntimeError, TypeError) as error:
+                return {
+                    "status": "failed",
+                    "error": f"Researcher execution failed: {error}",
+                }
+
+        return researcher_node
+
+    # MCP-enabled asynchronous mode.
+    async def researcher_node(state: ForgeAgentState) -> dict:
+        validated, error_result = validate_research_input(state)
+
+        if error_result is not None:
+            return error_result
+
+        if validated is None:
+            return {}
+
+        plan, repository_context_files = validated
+
+        # Create a new budget for every agent run.
+        budget = MCPToolExecutionBudget(
+            max_calls=mcp_max_tool_calls,
+        )
+
+        try:
+            research = await researcher_agent.research_with_mcp(
                 task_description=state["task_description"],
                 plan=plan,
                 repository_context_files=repository_context_files,
+                mcp_research_service=mcp_research_service,
+                budget=budget,
             )
 
             return {
@@ -342,10 +440,11 @@ def create_researcher_node(researcher_agent: ResearcherAgent):
         except (LLMError, ValueError) as error:
             return {
                 "status": "failed",
-                "error": str(error),
+                "error": f"Researcher MCP execution failed: {error}",
             }
 
     return researcher_node
+
 
 
 def create_coder_node(coder_agent: CoderAgent):
@@ -497,3 +596,114 @@ def create_reviewer_node(reviewer_agent: ReviewerAgent):
             }
 
     return reviewer_node
+
+
+
+def create_patch_preparation_node(patch_preparation_service):
+    """Create a node that validates and fingerprints coder-proposed changes.
+
+    The node only prepares patch data. It never applies changes to the sandbox.
+    """
+
+
+    def prepare_patch_node(state: ForgeAgentState) -> dict:
+        if state.get("status") == "failed":
+            return {}
+
+        code_changes_data = state.get("code_changes")
+        if not code_changes_data:
+            return {
+                "status": "failed",
+                "error": (
+                    "Patch preparation cannot run because "
+                    "no code changes are available."
+                ),
+            }
+
+        context_data = state.get("repository_context_files")
+        context_status = state.get(
+            "repository_context_status",
+            "unavailable",
+        )
+
+        if not context_data:
+            return {
+                "status": "failed",
+                "error": (
+                    "Patch preparation cannot run because "
+                    "repository context is unavailable."
+                ),
+            }
+
+        try:
+            code_response = CoderResponse.model_validate(
+                code_changes_data
+            )
+
+            repository_files = [
+                RepositoryFileContext(
+                    file_path=file["file_path"],
+                    content=file["content"],
+                    sha256=file["sha256"],
+                )
+                for file in context_data
+            ]
+
+            repository_context = RepositoryContextResult(
+                status=context_status,
+                files=repository_files,
+                total_bytes=state.get(
+                    "repository_context_bytes",
+                    0,
+                ),
+                skipped_files=state.get(
+                    "repository_context_skipped_files",
+                    [],
+                ),
+                errors=state.get(
+                    "repository_context_errors",
+                    [],
+                ),
+            )
+
+            authorized_new_paths = set(
+                state.get("authorized_new_paths", [])
+            )
+
+            result = patch_preparation_service.prepare(
+                code_response=code_response,
+                repository_context=repository_context,
+                authorized_new_paths=authorized_new_paths,
+            )
+
+            inspected_paths = {
+                file.file_path for file in repository_files
+            }
+            allowed_paths = inspected_paths | authorized_new_paths
+
+            return {
+                "patch": result.patch,
+                "patch_sha256": result.patch_sha256,
+                "changed_files": result.changed_files,
+                "allowed_paths": sorted(allowed_paths),
+                "patch_summary": result.summary,
+                "tests_to_run": result.tests_to_run,
+                "patch_risks": result.risks,
+                "status": "patch_prepared",
+                "error": "",
+            }
+
+        except PatchPreparationError as error:
+            return {
+                "status": "failed",
+                "error": f"Patch preparation failed: {error}",
+            }
+
+        except (ValueError, TypeError, KeyError) as error:
+            return {
+                "status": "failed",
+                "error": f"Invalid patch preparation data: {error}",
+            }
+
+    return prepare_patch_node
+

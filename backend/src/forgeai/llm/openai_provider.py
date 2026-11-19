@@ -29,6 +29,9 @@ class OpenAIProvider(LLMProvider):
     """OpenAI implementation of the LLM provider contract."""
 
     def __init__(self, settings: Settings) -> None:
+
+        if settings.openai_api_key is None:
+            raise ValueError("OPENAI_API_KEY is required when using the OpenAI provider.")
         self._model = settings.openai_model
 
         self._llm = ChatOpenAI(

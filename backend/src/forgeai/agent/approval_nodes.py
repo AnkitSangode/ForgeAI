@@ -1,21 +1,20 @@
 
 from collections.abc import Callable
 
-from sqlalchemy.orm import Session
 from langgraph.types import interrupt
+from sqlalchemy.orm import Session
 
-from forgeai.domain.patch_approval import ApprovalStatus
 from forgeai.application.patch_approval_service import (
     PatchApprovalService,
     PatchApprovalStateError,
 )
+from forgeai.domain.patch_approval import ApprovalStatus
 from forgeai.infrastructure.repositories.agent_run_repository import (
     SQLAlchemyAgentRunRepository,
 )
 from forgeai.infrastructure.repositories.patch_approval_repository import (
     SQLAlchemyPatchApprovalRepository,
 )
-
 
 SessionFactory = Callable[[], Session]
 

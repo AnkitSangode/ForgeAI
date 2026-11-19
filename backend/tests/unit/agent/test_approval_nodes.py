@@ -9,9 +9,6 @@ from forgeai.agent.approval_nodes import (
     create_human_approval_node,
 )
 from forgeai.domain.patch_approval import ApprovalStatus, PatchApproval
-from forgeai.application.patch_approval_service import (
-    PatchApprovalStateError,
-)
 
 
 @pytest.fixture

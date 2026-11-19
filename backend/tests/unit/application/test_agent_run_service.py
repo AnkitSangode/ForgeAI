@@ -1,10 +1,10 @@
 
 from dataclasses import replace
 from datetime import UTC, datetime
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
-from unittest.mock import MagicMock
 
 from forgeai.application.agent_run_service import (
     AgentRunNotFoundError,

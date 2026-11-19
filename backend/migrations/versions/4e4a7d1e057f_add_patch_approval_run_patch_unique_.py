@@ -6,15 +6,14 @@ Revises: 80dfa58a654c
 Create Date: 2026-11-11 13:29:35.702430
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
 
-
 revision: str = "4e4a7d1e057f"
-down_revision: Union[str, Sequence[str], None] = "80dfa58a654c"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "80dfa58a654c"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

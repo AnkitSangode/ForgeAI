@@ -4,8 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from forgeai.domain.patch_approval import (
-    PatchApproval,
     ApprovalStatus,
+    PatchApproval,
 )
 from forgeai.domain.repositories.patch_approval_repository import (
     PatchApprovalRepository,

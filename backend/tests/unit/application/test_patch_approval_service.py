@@ -12,7 +12,6 @@ from forgeai.application.patch_approval_service import (
 )
 from forgeai.domain.agent_run import AgentRun, AgentRunStatus
 from forgeai.domain.patch_approval import ApprovalStatus, PatchApproval
-from forgeai.domain.patch_approval import ApprovalStatus
 
 
 @pytest.fixture

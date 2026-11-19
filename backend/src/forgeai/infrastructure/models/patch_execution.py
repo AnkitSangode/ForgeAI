@@ -88,7 +88,7 @@ class PatchExecutionModel(Base):
     )
 
     claim_token: Mapped[str | None] = mapped_column(
-        String(36),
+        String(128),
         nullable=True,
     )
 
