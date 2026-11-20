@@ -790,43 +790,31 @@ OpenAI inference and E2B sandbox usage may incur charges independently of the ho
 
 ## Screenshots
 
-The following sections are reserved for actual application screenshots.
 
-Replace the image paths with screenshots captured from the deployed application.
+### 1. Authentication
 
-### 1. Landing Page
+![ForgeAI Authentication](frontend\artifacts\login.png)
 
-![ForgeAI Landing Page](docs/screenshots/01-landing-page.png)
+### 2. Dashboard
 
-### 2. Authentication
+![ForgeAI Dashboard](frontend\artifacts\dashboard.png)
 
-![ForgeAI Authentication](docs/screenshots/02-authentication.png)
+### 3. Create Engineering Task
 
-### 3. Dashboard
+![Create Task](frontend\artifacts\create_task.png)
 
-![ForgeAI Dashboard](docs/screenshots/03-dashboard.png)
+### 4. Task Details
 
-### 4. Create Engineering Task
+![Task Details](frontend\artifacts\agents.png)
 
-![Create Task](docs/screenshots/04-create-task.png)
+### 5. Agent Execution
 
-### 5. Task Details
+![Agent Execution](frontend\artifacts\code_review.png)
 
-![Task Details](docs/screenshots/05-task-details.png)
+### 6. Human Approval / Code Review
 
-### 6. Agent Execution
+![Human Approval](frontend\artifacts\Human_approval.png)
 
-![Agent Execution](docs/screenshots/06-agent-execution.png)
-
-### 7. Human Approval / Code Review
-
-![Human Approval](docs/screenshots/07-human-approval.png)
-
-### 8. Architecture Overview
-
-![ForgeAI Architecture](docs/screenshots/08-architecture.png)
-
----
 
 ## Limitations and Considerations
 
