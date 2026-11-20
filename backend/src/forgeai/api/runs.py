@@ -3,10 +3,12 @@ import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from forgeai.api.schemas.agent_run import AgentRunRead
+from forgeai.api.dependencies.auth import get_current_user
+from forgeai.infrastructure.models.user import User
 from forgeai.application.agent_run_service import (
     AgentRunNotFoundError,
     AgentRunService,
@@ -33,6 +35,7 @@ runs_collection_router = APIRouter(
 @runs_collection_router.get("", response_model=list[AgentRunRead])
 def list_agent_runs(
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
     task_id: UUID | None = None,
@@ -49,6 +52,7 @@ def list_agent_runs(
 def get_agent_run(
     run_id: UUID,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> AgentRunRead:
     try:
         run = AgentRunService(db).get_run(str(run_id))
@@ -94,6 +98,64 @@ def is_graph_interrupted(graph, config: dict) -> bool:
     )
 
 
+def execute_agent_run(
+    graph,
+    telemetry,
+    task_id: str,
+    run_id: str,
+    thread_id: str,
+    task_description: str,
+    repository_url: str,
+) -> None:
+    """Execute a run after returning the HTTP response to the client."""
+    with SessionLocal() as session:
+        service = AgentRunService(session)
+        service.update_status(run_id, AgentRunStatus.RUNNING)
+        initial_state = {
+            "task_id": task_id,
+            "agent_run_id": run_id,
+            "task_description": task_description,
+            "repository_url": repository_url,
+        }
+        config = {"configurable": {"thread_id": thread_id}}
+        try:
+            if telemetry is not None:
+                with telemetry.span(
+                    name="forgeai.agent_run",
+                    input_data={"operation": "graph.invoke"},
+                    metadata={
+                        "task_id": task_id,
+                        "agent_run_id": run_id,
+                        "thread_id": thread_id,
+                    },
+                ) as observation:
+                    result = graph.invoke(initial_state, config=config)
+                    final_status = (
+                        AgentRunStatus.AWAITING_APPROVAL
+                        if is_graph_interrupted(graph, config)
+                        else determine_run_status(result)
+                    )
+                    observation.update(output={"status": final_status.value})
+            else:
+                result = graph.invoke(initial_state, config=config)
+                final_status = (
+                    AgentRunStatus.AWAITING_APPROVAL
+                    if is_graph_interrupted(graph, config)
+                    else determine_run_status(result)
+                )
+            service.update_status(run_id, final_status)
+        except Exception:
+            logger.exception(
+                "Agent execution failed. run_id=%s task_id=%s",
+                run_id,
+                task_id,
+            )
+            try:
+                service.update_status(run_id, AgentRunStatus.FAILED)
+            except Exception:
+                logger.exception("Failed to persist failed run status. run_id=%s", run_id)
+
+
 @router.post(
     "/{task_id}/runs",
     response_model=AgentRunRead,
@@ -102,7 +164,9 @@ def is_graph_interrupted(graph, config: dict) -> bool:
 def start_agent_run(
     task_id: UUID,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> AgentRunRead:
     """Create an AgentRun and execute the LangGraph workflow."""
 
@@ -126,115 +190,19 @@ def start_agent_run(
             detail="Agent graph is not available.",
         )
 
-    # 3. Retrieve the shared telemetry instance.
     telemetry = getattr(request.app.state, "telemetry", None)
 
-    # 4. Keep one database session and service instance for this request.
     with SessionLocal() as session:
         run_service = AgentRunService(session)
-
         run = run_service.create_run(str(task.id))
-
-        run_service.update_status(
-            run.id,
-            AgentRunStatus.RUNNING,
+        background_tasks.add_task(
+            execute_agent_run,
+            graph,
+            telemetry,
+            str(task.id),
+            str(run.id),
+            run.thread_id,
+            task.description,
+            str(task.repository_url),
         )
-
-        # 5. Prepare the initial graph state.
-        initial_state = {
-            "task_id": str(task.id),
-            "agent_run_id": str(run.id),
-            "task_description": task.description,
-            "repository_url": task.repository_url,
-        }
-
-        # 6. Use the persisted thread ID for checkpointing.
-        config = {
-            "configurable": {
-                "thread_id": run.thread_id,
-            }
-        }
-
-        try:
-            if telemetry is not None:
-                # Create a parent observation for the agent run.
-                with telemetry.span(
-                    name="forgeai.agent_run",
-                    input_data={
-                        "operation": "graph.invoke",
-                    },
-                    metadata={
-                        "task_id": str(task.id),
-                        "agent_run_id": str(run.id),
-                        "thread_id": run.thread_id,
-                    },
-                ) as observation:
-
-                    result = graph.invoke(
-                        initial_state,
-                        config=config,
-                    )
-
-                    # 7. Determine the final workflow status.
-                    if is_graph_interrupted(graph, config):
-                        final_status = AgentRunStatus.AWAITING_APPROVAL
-                    else:
-                        final_status = determine_run_status(result)
-
-                    # Record safe execution metadata.
-                    observation.update(
-                        output={
-                            "status": final_status.value,
-                        },
-                        metadata={
-                            "interrupted": (
-                                final_status
-                                == AgentRunStatus.AWAITING_APPROVAL
-                            ),
-                        },
-                    )
-
-            else:
-                result = graph.invoke(
-                    initial_state,
-                    config=config,
-                )
-
-                if is_graph_interrupted(graph, config):
-                    final_status = AgentRunStatus.AWAITING_APPROVAL
-                else:
-                    final_status = determine_run_status(result)
-
-            # 8. Persist the final status using the same service.
-            updated_run = run_service.update_status(
-                run.id,
-                final_status,
-            )
-
-            return AgentRunRead.model_validate(updated_run)
-
-        except Exception as exc:
-            # 9. Log the complete exception and traceback.
-            logger.exception(
-                "Agent execution failed. run_id=%s task_id=%s",
-                run.id,
-                task.id,
-            )
-
-            # 10. Mark the run as failed.
-            try:
-                run_service.update_status(
-                    run.id,
-                    AgentRunStatus.FAILED,
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to update AgentRun status. run_id=%s",
-                    run.id,
-                )
-
-            # 11. Preserve the original exception in the exception chain.
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Agent execution failed. Run ID: {run.id}",
-            ) from exc
+        return AgentRunRead.model_validate(run)

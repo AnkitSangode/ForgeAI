@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     app_name: str = "ForgeAI"
     app_version: str = "0.1.0"
     environment: str = "development"
+    cors_origins: str = ""
 
     database_url: str = (
         "postgresql+psycopg://forgeai:forgeai@localhost:5432/forgeai"

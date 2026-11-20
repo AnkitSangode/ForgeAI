@@ -1,328 +1,99 @@
-
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import DashboardLayout from "@/components/layout/dashboard-layout";
-import {
-  ArrowLeft,
-  Bot,
-  CheckCircle2,
-  Clock3,
-  Code2,
-  GitBranch,
-  GitPullRequest,
-  Loader2,
-  Play,
-  Terminal,
-  CircleDot,
-  FileCode2,
-} from "lucide-react";
+import { ArrowLeft, Bot, CheckCircle2, Clock3, Code2, Loader2, Play, RefreshCw, XCircle } from "lucide-react";
+import { api, type AgentRun, type Task } from "@/lib/api";
 
-type Task = {
-  title: string;
-  description: string;
-  repositoryUrl: string;
-  branch: string;
-  priority: string;
-  taskType: string;
-};
-
-const workflow = [
-  {
-    name: "Task Analysis",
-    description: "Analyze requirements and understand the codebase",
-    status: "pending",
-    icon: CircleDot,
-  },
-  {
-    name: "Planning",
-    description: "Create an implementation plan",
-    status: "pending",
-    icon: Bot,
-  },
-  {
-    name: "Development",
-    description: "Implement the requested changes",
-    status: "pending",
-    icon: Code2,
-  },
-  {
-    name: "Code Review",
-    description: "Validate generated code and changes",
-    status: "pending",
-    icon: GitPullRequest,
-  },
-];
+const terminal = ["succeeded", "failed", "rejected"];
 
 export default function TaskDetailsPage() {
   const params = useParams<{ taskId: string }>();
-
   const [task, setTask] = useState<Task | null>(null);
+  const [run, setRun] = useState<AgentRun | null>(null);
   const [loading, setLoading] = useState(true);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    const saved = sessionStorage.getItem("forgeai_pending_task");
-
-    if (saved) {
-      try {
-        setTask(JSON.parse(saved) as Task);
-      } catch {
-        setTask(null);
-      }
-    }
-
-    setLoading(false);
+  const refreshRun = useCallback(async (runId: string) => {
+    const latest = await api.getRun(runId);
+    setRun(latest);
+    return latest;
   }, []);
 
-  if (loading) {
-    return (
-      <DashboardLayout>
-        <div className="flex min-h-[400px] items-center justify-center">
-          <Loader2 className="animate-spin text-violet-400" />
-        </div>
-      </DashboardLayout>
-    );
+  useEffect(() => {
+    Promise.all([api.getTask(params.taskId), api.listRuns(params.taskId)])
+      .then(([loadedTask, runs]) => {
+        setTask(loadedTask);
+        if (runs.length) setRun(runs[0]);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Unable to load task."))
+      .finally(() => setLoading(false));
+  }, [params.taskId]);
+
+  useEffect(() => {
+    if (!run || terminal.includes(run.status.toLowerCase()) || run.status.toLowerCase() === "awaiting_approval") return;
+    const timer = window.setInterval(() => {
+      refreshRun(run.id).catch((err) => setError(err instanceof Error ? err.message : "Unable to refresh run."));
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [run, refreshRun]);
+
+  async function executeTask() {
+    setError("");
+    setStarting(true);
+    try {
+      const createdRun = await api.startRun(params.taskId);
+      setRun(createdRun);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to start agent run.");
+    } finally {
+      setStarting(false);
+    }
   }
 
-  if (!task) {
-    return (
-      <DashboardLayout>
-        <div className="dashboard-card flex flex-col items-center p-12 text-center">
-          <FileCode2 size={36} className="mb-4 text-zinc-500" />
-          <h2 className="text-lg font-semibold text-white">
-            Task not found
-          </h2>
-          <p className="mt-2 text-sm text-zinc-500">
-            This task is not available in the current browser session.
-          </p>
-          <Link
-            href="/tasks"
-            className="mt-5 text-sm text-violet-400"
-          >
-            Back to Tasks
-          </Link>
-        </div>
-      </DashboardLayout>
-    );
-  }
+  if (loading) return <DashboardLayout><div className="flex min-h-[400px] items-center justify-center"><Loader2 className="animate-spin text-violet-400" /></div></DashboardLayout>;
+  if (!task) return <DashboardLayout><div className="dashboard-card p-10 text-center"><h2 className="text-lg font-semibold text-white">Task not found</h2><p className="mt-2 text-sm text-zinc-500">{error}</p><Link href="/tasks" className="mt-5 inline-block text-violet-400">Back to Tasks</Link></div></DashboardLayout>;
+
+  const status = run?.status || "not_started";
+  const running = ["pending", "running", "executing"].includes(status.toLowerCase());
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
-
-        <Link
-          href="/tasks"
-          className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-white"
-        >
-          <ArrowLeft size={15} />
-          Back to Tasks
-        </Link>
-
-        {/* Task heading */}
-        <section className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
-          <div>
-            <div className="mb-3 flex items-center gap-2">
-              <span className="rounded-md bg-violet-500/10 px-2.5 py-1 text-[11px] text-violet-400">
-                LOCAL DRAFT
-              </span>
-              <span className="text-xs text-zinc-500">
-                {params.taskId}
-              </span>
-            </div>
-
-            <h1 className="text-2xl font-bold text-white">
-              {task.title}
-            </h1>
-
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
-              {task.description}
-            </p>
-          </div>
-
-          <button
-            disabled
-            title="Backend execution is not connected yet"
-            className="flex cursor-not-allowed items-center justify-center gap-2 rounded-lg bg-violet-600/40 px-5 py-3 text-sm font-medium text-white/60"
-          >
-            <Play size={16} />
-            Start Execution
+        <Link href="/tasks" className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-white"><ArrowLeft size={15} />Back to Tasks</Link>
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+          <div><p className="text-xs uppercase tracking-wider text-violet-400">Engineering task</p><h1 className="mt-2 text-2xl font-bold text-white">{task.title}</h1><p className="mt-2 max-w-3xl whitespace-pre-wrap text-sm leading-6 text-zinc-400">{task.description}</p></div>
+          <button onClick={executeTask} disabled={starting || running} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-violet-600 px-5 py-3 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50">
+            {starting || running ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+            {starting ? "Starting..." : running ? "Agent Running" : run ? "Run Again" : "Execute Agent"}
           </button>
-        </section>
-
-        {/* Metadata */}
-        <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="dashboard-card p-5">
-            <div className="flex items-center gap-2 text-xs text-zinc-500">
-              <GitBranch size={15} />
-              Repository Branch
-            </div>
-            <p className="mt-3 text-sm font-medium text-white">
-              {task.branch}
-            </p>
-          </div>
-
-          <div className="dashboard-card p-5">
-            <div className="flex items-center gap-2 text-xs text-zinc-500">
-              <CircleDot size={15} />
-              Priority
-            </div>
-            <p className="mt-3 text-sm font-medium capitalize text-white">
-              {task.priority}
-            </p>
-          </div>
-
-          <div className="dashboard-card p-5">
-            <div className="flex items-center gap-2 text-xs text-zinc-500">
-              <Code2 size={15} />
-              Task Type
-            </div>
-            <p className="mt-3 text-sm font-medium capitalize text-white">
-              {task.taskType}
-            </p>
-          </div>
-        </section>
-
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-
-          {/* Workflow */}
-          <section className="dashboard-card p-5 xl:col-span-2">
-            <div className="mb-6">
-              <h2 className="text-sm font-semibold text-white">
-                Agent Execution Workflow
-              </h2>
-              <p className="mt-1 text-xs text-zinc-500">
-                Planned stages of autonomous task execution
-              </p>
-            </div>
-
-            <div className="space-y-6">
-              {workflow.map((step, index) => {
-                const Icon = step.icon;
-
-                return (
-                  <div key={step.name} className="flex gap-4">
-                    <div className="flex flex-col items-center">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#30303a] bg-[#19191f]">
-                        <Icon size={18} className="text-zinc-400" />
-                      </div>
-
-                      {index !== workflow.length - 1 && (
-                        <div className="mt-2 h-7 w-px bg-[#30303a]" />
-                      )}
-                    </div>
-
-                    <div className="flex-1 pb-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <h3 className="text-sm font-medium text-zinc-200">
-                          {step.name}
-                        </h3>
-
-                        <span className="rounded-md bg-zinc-500/10 px-2 py-1 text-[10px] text-zinc-500">
-                          Pending
-                        </span>
-                      </div>
-
-                      <p className="mt-1 text-xs text-zinc-500">
-                        {step.description}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          {/* Execution status */}
-          <section className="dashboard-card h-fit p-5">
-            <h2 className="text-sm font-semibold text-white">
-              Execution Status
-            </h2>
-
-            <div className="mt-6 flex flex-col items-center rounded-xl border border-[#30303a] bg-[#151519] p-6 text-center">
-              <div className="rounded-full bg-amber-500/10 p-4">
-                <Clock3 size={25} className="text-amber-400" />
-              </div>
-
-              <h3 className="mt-4 text-sm font-semibold text-white">
-                Awaiting Execution
-              </h3>
-
-              <p className="mt-2 text-xs leading-5 text-zinc-500">
-                This task has been prepared locally. Backend execution
-                has not started.
-              </p>
-            </div>
-
-            <div className="mt-5 space-y-4">
-              <div className="flex justify-between text-xs">
-                <span className="text-zinc-500">Progress</span>
-                <span className="text-white">0%</span>
-              </div>
-
-              <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
-                <div className="h-full w-0 bg-violet-500" />
-              </div>
-
-              <div className="flex justify-between text-xs">
-                <span className="text-zinc-500">Agents started</span>
-                <span className="text-white">0 / 4</span>
-              </div>
-            </div>
-          </section>
         </div>
 
-        {/* Repository */}
-        <section className="dashboard-card p-5">
-          <div className="flex items-center gap-3">
-            <Code2 size={19} className="text-violet-400" />
-            <h2 className="text-sm font-semibold text-white">
-              Connected Repository
-            </h2>
-          </div>
+        {error && <div role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">{error}</div>}
 
-          <a
-            href={task.repositoryUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-4 block break-all text-sm text-violet-400 hover:text-violet-300"
-          >
-            {task.repositoryUrl}
-          </a>
-
-          <p className="mt-2 text-xs text-zinc-500">
-            Target branch: {task.branch}
-          </p>
+        <section className="grid gap-4 sm:grid-cols-2">
+          <div className="dashboard-card p-5"><div className="flex items-center gap-2 text-xs text-zinc-500"><Code2 size={15}/>Repository</div><a className="mt-3 block break-all text-sm text-violet-400" href={task.repository_url} target="_blank" rel="noreferrer">{task.repository_url}</a></div>
+          <div className="dashboard-card p-5"><div className="flex items-center gap-2 text-xs text-zinc-500"><Clock3 size={15}/>Task status</div><p className="mt-3 text-sm capitalize text-white">{task.status}</p></div>
         </section>
 
-        {/* Execution logs */}
-        <section className="dashboard-card overflow-hidden">
-          <div className="flex items-center gap-3 border-b border-[#27272f] p-5">
-            <Terminal size={18} className="text-violet-400" />
-            <div>
-              <h2 className="text-sm font-semibold text-white">
-                Execution Logs
-              </h2>
-              <p className="mt-1 text-xs text-zinc-500">
-                Agent events and execution output
-              </p>
+        <section className="dashboard-card p-6">
+          <div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-semibold text-white">Agent execution</h2><p className="mt-1 text-xs text-zinc-500">Live status retrieved from the ForgeAI API</p></div><Bot className="text-violet-400" size={20}/></div>
+          {run ? (
+            <div className="mt-5 rounded-xl border border-[#30303a] bg-[#151519] p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs text-zinc-500">Run ID</p><p className="mt-1 break-all font-mono text-xs text-zinc-300">{run.id}</p></div><span className="rounded-md bg-violet-500/10 px-3 py-1.5 text-xs capitalize text-violet-300">{run.status.replaceAll("_", " ")}</span></div>
+              <p className="mt-4 text-xs text-zinc-500">Last updated: {new Date(run.updated_at).toLocaleString()}</p>
+              {running && <p className="mt-3 flex items-center gap-2 text-xs text-blue-300"><RefreshCw size={13} className="animate-spin"/>Refreshing every 3 seconds</p>}
+              {run.status.toLowerCase() === "succeeded" && <p className="mt-4 flex items-center gap-2 text-sm text-emerald-400"><CheckCircle2 size={16}/>Workflow completed successfully.</p>}
+              {["failed", "rejected"].includes(run.status.toLowerCase()) && <p className="mt-4 flex items-center gap-2 text-sm text-red-400"><XCircle size={16}/>Workflow ended with status: {run.status}.</p>}
+              {run.status.toLowerCase() === "awaiting_approval" && <p className="mt-4 text-sm text-amber-300">Human approval is required. Open Code Reviews to inspect pending approvals.</p>}
             </div>
-          </div>
-
-          <div className="bg-[#0b0b0e] p-5 font-mono text-xs">
-            <p className="text-zinc-500">
-              [SYSTEM] Task configuration loaded.
-            </p>
-            <p className="mt-3 text-zinc-500">
-              [SYSTEM] Repository URL configured.
-            </p>
-            <p className="mt-3 text-amber-400">
-              [WAITING] Backend execution service not connected.
-            </p>
-          </div>
+          ) : (
+            <div className="mt-5 rounded-xl border border-dashed border-[#30303a] p-10 text-center"><Clock3 className="mx-auto mb-3 text-zinc-500" size={25}/><p className="text-sm text-zinc-300">No agent run has been started.</p><p className="mt-1 text-xs text-zinc-500">Select Execute Agent to start the workflow.</p></div>
+          )}
         </section>
-
       </div>
     </DashboardLayout>
   );

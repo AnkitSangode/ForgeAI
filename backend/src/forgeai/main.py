@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from langgraph.checkpoint.postgres import PostgresSaver
 from psycopg_pool import ConnectionPool
 from sqlalchemy.engine import make_url
@@ -20,6 +21,7 @@ from forgeai.api.auth import router as auth_router
 from forgeai.api.github import router as github_router
 from forgeai.api.health import router as health_router
 from forgeai.api.runs import router as runs_router
+from forgeai.api.runs import runs_collection_router
 from forgeai.api.tasks import router as tasks_router
 
 from forgeai.application.approved_patch_execution_worker import (
@@ -435,6 +437,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+allowed_origins = [
+    origin.strip()
+    for origin in settings.cors_origins.split(",")
+    if origin.strip()
+]
+if allowed_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
 
 @app.middleware("http")
 async def trace_http_request(request, call_next):
@@ -477,6 +493,7 @@ app.include_router(tasks_router)
 app.include_router(auth_router)
 app.include_router(approvals_router)
 app.include_router(runs_router)
+app.include_router(runs_collection_router)
 app.include_router(github_router)
 
 

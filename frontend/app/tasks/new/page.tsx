@@ -5,6 +5,7 @@ import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import DashboardLayout from "@/components/layout/dashboard-layout";
+import { api } from "@/lib/api";
 import {
   ArrowLeft,
   ArrowRight,
@@ -29,7 +30,7 @@ export default function CreateTaskPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
 
@@ -40,17 +41,9 @@ export default function CreateTaskPage() {
 
     try {
       const url = new URL(repositoryUrl);
-
-      if (
-        url.hostname !== "github.com" &&
-        url.hostname !== "www.github.com"
-      ) {
+      if (!["github.com", "www.github.com"].includes(url.hostname) ||
+          url.pathname.split("/").filter(Boolean).length < 2) {
         setError("Please enter a valid GitHub repository URL.");
-        return;
-      }
-
-      if (url.pathname.split("/").filter(Boolean).length < 2) {
-        setError("Please enter a GitHub owner and repository name.");
         return;
       }
     } catch {
@@ -58,25 +51,18 @@ export default function CreateTaskPage() {
       return;
     }
 
-    // Temporary frontend submission.
-    // Replace this with the backend API call during integration.
     setSubmitting(true);
-
-    const task = {
-      title: title.trim(),
-      description: description.trim(),
-      repositoryUrl: repositoryUrl.trim(),
-      branch: branch.trim(),
-      priority,
-      taskType,
-    };
-
-    sessionStorage.setItem(
-      "forgeai_pending_task",
-      JSON.stringify(task)
-    );
-
-    router.push("/tasks");
+    try {
+      const created = await api.createTask({
+        title: title.trim(),
+        description: `${description.trim()}\\n\\nTask type: ${taskType}. Priority: ${priority}. Target branch: ${branch.trim() || "default"}.`,
+        repository_url: repositoryUrl.trim(),
+      });
+      router.push(`/tasks/${created.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create task.");
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -279,9 +265,8 @@ export default function CreateTaskPage() {
               <Info size={17} className="shrink-0 text-blue-400" />
 
               <p className="text-xs leading-5 text-zinc-400">
-                The repository must be accessible to ForgeAI. Private
-                repository access and GitHub authentication will be
-                configured during backend integration.
+                Public repositories are supported. Private repositories require
+                a GitHub token configured on the backend.
               </p>
             </div>
           </section>
@@ -348,7 +333,7 @@ export default function CreateTaskPage() {
 
         <div className="mt-5 flex items-center justify-center gap-2 text-xs text-zinc-600">
           <CheckCircle2 size={14} />
-          Task configuration is prepared locally until backend integration.
+          Task details are submitted securely to the ForgeAI backend.
         </div>
       </div>
     </DashboardLayout>
