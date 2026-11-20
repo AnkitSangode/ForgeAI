@@ -793,11 +793,11 @@ OpenAI inference and E2B sandbox usage may incur charges independently of the ho
 
 ### 1. Authentication
 
-![ForgeAI Authentication](frontend\artifacts\login.png)
+![ForgeAI Authentication](frontend\Deliverables\login.png)
 
 ### 2. Dashboard
 
-![ForgeAI Dashboard](frontend\artifacts\dashboard.png)
+![ForgeAI Dashboard](frontend\Deliverables\dashboard.png)
 
 ### 3. Create Engineering Task
 
@@ -805,15 +805,15 @@ OpenAI inference and E2B sandbox usage may incur charges independently of the ho
 
 ### 4. Task Details
 
-![Task Details](frontend\artifacts\agents.png)
+![Task Details](frontend\Deliverables\agents.png)
 
 ### 5. Agent Execution
 
-![Agent Execution](frontend\artifacts\code_review.png)
+![Agent Execution](frontend\Deliverables\code_review.png)
 
 ### 6. Human Approval / Code Review
 
-![Human Approval](frontend\artifacts\Human_approval.png)
+![Human Approval](frontend\Deliverables\Human_approval.png)
 
 
 ## Limitations and Considerations
