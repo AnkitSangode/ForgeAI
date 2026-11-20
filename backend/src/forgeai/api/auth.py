@@ -7,10 +7,12 @@ from forgeai.api.dependencies.auth import get_current_user
 from forgeai.api.schemas.auth import (
     CurrentUserResponse,
     LoginRequest,
+    RegisterRequest,
     TokenResponse,
 )
 from forgeai.application.auth_service import (
     AuthenticationError,
+    DuplicateEmailError,
     AuthService,
 )
 from forgeai.infrastructure.models.user import User
@@ -20,6 +22,29 @@ router = APIRouter(
     prefix="/api/v1/auth",
     tags=["authentication"],
 )
+
+
+@router.post(
+    "/register",
+    response_model=TokenResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def register(
+    payload: RegisterRequest,
+    db: Annotated[Session, Depends(get_db)],
+) -> TokenResponse:
+    service = AuthService(db)
+    try:
+        access_token = service.register(
+            email=str(payload.email),
+            password=payload.password,
+        )
+    except DuplicateEmailError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    return TokenResponse(access_token=access_token)
 
 
 @router.post(

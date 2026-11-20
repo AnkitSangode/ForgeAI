@@ -14,6 +14,16 @@ class AgentRunRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def list(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        task_id: UUID | None = None,
+    ) -> list[AgentRun]:
+        raise NotImplementedError
+
+    @abstractmethod
     def get_by_thread_id(self, thread_id: str) -> AgentRun | None:
         raise NotImplementedError
 

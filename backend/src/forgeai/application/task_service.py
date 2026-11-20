@@ -30,6 +30,13 @@ class TaskService:
             self.session.rollback()
             raise
 
+    def list_tasks(self, *, offset: int = 0, limit: int = 50) -> list[Task]:
+        if offset < 0:
+            raise ValueError("offset must be non-negative")
+        if not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        return self.repository.list(offset=offset, limit=limit)
+
     def get_task(self, task_id: UUID) -> Task:
         task = self.repository.get_by_id(task_id)
 

@@ -35,6 +35,24 @@ class SQLAlchemyAgentRunRepository(AgentRunRepository):
 
         return self._to_domain(model) if model else None
 
+    def list(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        task_id: UUID | None = None,
+    ) -> list[AgentRun]:
+        statement = select(AgentRunModel)
+        if task_id is not None:
+            statement = statement.where(AgentRunModel.task_id == task_id)
+        statement = (
+            statement.order_by(AgentRunModel.created_at.desc(), AgentRunModel.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        models = self.session.scalars(statement).all()
+        return [self._to_domain(model) for model in models]
+
     def get_by_thread_id(self, thread_id: str) -> AgentRun | None:
         statement = select(AgentRunModel).where(AgentRunModel.thread_id == thread_id)
         model = self.session.scalar(statement)

@@ -1,12 +1,14 @@
 
+import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from forgeai.api.schemas.agent_run import AgentRunRead
 from forgeai.application.agent_run_service import (
+    AgentRunNotFoundError,
     AgentRunService,
     AgentRunStatus,
 )
@@ -14,10 +16,49 @@ from forgeai.application.task_service import TaskNotFoundError, TaskService
 from forgeai.infrastructure.session import SessionLocal, get_db
 
 
+logger = logging.getLogger(__name__)
+
+
 router = APIRouter(
     prefix="/api/v1/tasks",
     tags=["agent-runs"],
 )
+
+runs_collection_router = APIRouter(
+    prefix="/api/v1/runs",
+    tags=["agent-runs"],
+)
+
+
+@runs_collection_router.get("", response_model=list[AgentRunRead])
+def list_agent_runs(
+    db: Annotated[Session, Depends(get_db)],
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    task_id: UUID | None = None,
+) -> list[AgentRunRead]:
+    runs = AgentRunService(db).list_runs(
+        offset=offset,
+        limit=limit,
+        task_id=task_id,
+    )
+    return [AgentRunRead.model_validate(run) for run in runs]
+
+
+@runs_collection_router.get("/{run_id}", response_model=AgentRunRead)
+def get_agent_run(
+    run_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+) -> AgentRunRead:
+    try:
+        run = AgentRunService(db).get_run(str(run_id))
+    except AgentRunNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
+
+    return AgentRunRead.model_validate(run)
 
 
 def determine_run_status(result: dict) -> AgentRunStatus:
@@ -173,16 +214,26 @@ def start_agent_run(
             return AgentRunRead.model_validate(updated_run)
 
         except Exception as exc:
-            # 9. Mark the run as failed if execution raises an exception.
+            # 9. Log the complete exception and traceback.
+            logger.exception(
+                "Agent execution failed. run_id=%s task_id=%s",
+                run.id,
+                task.id,
+            )
+
+            # 10. Mark the run as failed.
             try:
                 run_service.update_status(
                     run.id,
                     AgentRunStatus.FAILED,
                 )
             except Exception:
-                # Preserve the original execution exception.
-                pass
+                logger.exception(
+                    "Failed to update AgentRun status. run_id=%s",
+                    run.id,
+                )
 
+            # 11. Preserve the original exception in the exception chain.
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Agent execution failed. Run ID: {run.id}",

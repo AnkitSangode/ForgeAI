@@ -28,6 +28,21 @@ def create_task(payload: TaskCreate, db: Annotated[Session, Depends(get_db)]) ->
     return TaskRead.model_validate(task)
 
 
+@router.get("", response_model=list[TaskRead])
+def list_tasks(
+    db: Annotated[Session, Depends(get_db)],
+    offset: int = 0,
+    limit: int = 50,
+) -> list[TaskRead]:
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="offset must be non-negative")
+    if not 1 <= limit <= 100:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 100")
+
+    tasks = TaskService(db).list_tasks(offset=offset, limit=limit)
+    return [TaskRead.model_validate(task) for task in tasks]
+
+
 @router.get("/{task_id}", response_model=TaskRead)
 def get_task(task_id: UUID, db: Annotated[Session, Depends(get_db)]) -> TaskRead:
     service = TaskService(db)

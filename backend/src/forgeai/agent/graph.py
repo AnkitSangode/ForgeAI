@@ -35,6 +35,7 @@ from forgeai.application.mcp.mcp_research_service import (
 )
 from forgeai.application.patch_preparation_service import PatchPreparationService
 from forgeai.execution.sandbox.base import SandboxProvider
+from forgeai.telemetry.opentelemetry import trace_graph_node
 
 
 def route_after_prepare(
@@ -279,29 +280,29 @@ def build_agent_graph(
         }
 
     # Register infrastructure nodes.
-    builder.add_node("prepare_task", prepare_task_node)
-    builder.add_node("create_sandbox", sandbox_node)
-    builder.add_node("clone_repository", clone_node)
-    builder.add_node("inspect_repository", inspection_node)
-    builder.add_node("build_repository_context", context_node)
+    builder.add_node("prepare_task", trace_graph_node("prepare_task", prepare_task_node))
+    builder.add_node("create_sandbox", trace_graph_node("create_sandbox", sandbox_node))
+    builder.add_node("clone_repository", trace_graph_node("clone_repository", clone_node))
+    builder.add_node("inspect_repository", trace_graph_node("inspect_repository", inspection_node))
+    builder.add_node("build_repository_context", trace_graph_node("build_repository_context", context_node))
 
     # Register agent nodes.
-    builder.add_node("planner", planner_node)
-    builder.add_node("researcher", researcher_node)
-    builder.add_node("coder", coder_node)
-    builder.add_node("reviewer", reviewer_node)
+    builder.add_node("planner", trace_graph_node("planner", planner_node))
+    builder.add_node("researcher", trace_graph_node("researcher", researcher_node))
+    builder.add_node("coder", trace_graph_node("coder", coder_node))
+    builder.add_node("reviewer", trace_graph_node("reviewer", reviewer_node))
 
     if approval_pipeline_enabled:
-        builder.add_node("prepare_patch", patch_preparation_node)
-        builder.add_node("create_approval", approval_node)
-        builder.add_node("human_approval", human_approval_node)
-        builder.add_node("create_execution", execution_record_node)
-        builder.add_node("execute_approved_patch", approved_patch_execution_node)
+        builder.add_node("prepare_patch", trace_graph_node("prepare_patch", patch_preparation_node))
+        builder.add_node("create_approval", trace_graph_node("create_approval", approval_node))
+        builder.add_node("human_approval", trace_graph_node("human_approval", human_approval_node))
+        builder.add_node("create_execution", trace_graph_node("create_execution", execution_record_node))
+        builder.add_node("execute_approved_patch", trace_graph_node("execute_approved_patch", approved_patch_execution_node))
 
     # Register terminal node.
     builder.add_node(
         "review_limit_reached",
-        review_limit_reached_node,
+        trace_graph_node("review_limit_reached", review_limit_reached_node),
     )
 
     # Entry point.

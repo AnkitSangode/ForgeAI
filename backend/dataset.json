@@ -1,0 +1,187 @@
+{
+  "name": "ForgeAI Controlled Bug-Fixing Benchmark",
+  "version": "1.0",
+  "total_scenarios": 20,
+  "cases": [
+    {
+      "case_id": "BUG-001",
+      "title": "Safe division",
+      "task_description": "Implement safe_divide(a, b). It must return the quotient for non-zero b and raise ValueError('division by zero') when b is zero.",
+      "repository_path": "scenarios/BUG-001",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    },
+    {
+      "case_id": "BUG-002",
+      "title": "Email normalization",
+      "task_description": "Implement normalize_email(value): trim surrounding whitespace and lowercase the email. Reject non-string and empty values with ValueError.",
+      "repository_path": "scenarios/BUG-002",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    },
+    {
+      "case_id": "BUG-003",
+      "title": "Port validation",
+      "task_description": "Implement parse_port(value): accept integer strings and integers from 1 through 65535; reject booleans, malformed values, zero, and out-of-range values with ValueError.",
+      "repository_path": "scenarios/BUG-003",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    },
+    {
+      "case_id": "BUG-004",
+      "title": "Pagination validation",
+      "task_description": "Implement paginate(items, limit, offset): require limit 1..100 and offset >= 0; return the requested slice. Raise ValueError for invalid bounds.",
+      "repository_path": "scenarios/BUG-004",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    },
+    {
+      "case_id": "BUG-005",
+      "title": "Stable deduplication",
+      "task_description": "Implement unique_preserving_order(items): remove duplicates while preserving the first occurrence order. Support hashable values.",
+      "repository_path": "scenarios/BUG-005",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    },
+    {
+      "case_id": "BUG-006",
+      "title": "Task status transitions",
+      "task_description": "Implement can_transition(current, target). Allowed transitions: pending->running/cancelled; running->succeeded/failed/cancelled; failed->pending. All others return False.",
+      "repository_path": "scenarios/BUG-006",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    },
+    {
+      "case_id": "BUG-007",
+      "title": "UTC timestamp normalization",
+      "task_description": "Implement to_utc_iso(value): accept ISO datetime strings; treat naive timestamps as UTC; convert offset-aware timestamps to UTC; return ISO string ending in +00:00.",
+      "repository_path": "scenarios/BUG-007",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    },
+    {
+      "case_id": "BUG-008",
+      "title": "Workspace path containment",
+      "task_description": "Implement resolve_workspace_path(root, user_path): resolve the path and ensure it remains inside root. Raise ValueError for traversal or absolute-path escape.",
+      "repository_path": "scenarios/BUG-008",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    },
+    {
+      "case_id": "BUG-009",
+      "title": "Archive member validation",
+      "task_description": "Implement is_safe_archive_member(name): return False for absolute paths, parent traversal, Windows drive paths, or NUL bytes; True for safe relative names.",
+      "repository_path": "scenarios/BUG-009",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    },
+    {
+      "case_id": "BUG-010",
+      "title": "Bounded retry",
+      "task_description": "Implement retry_delay(attempt, base=0.5, maximum=8.0): attempt must be >=1; return min(base * 2**(attempt-1), maximum).",
+      "repository_path": "scenarios/BUG-010",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    },
+    {
+      "case_id": "BUG-011",
+      "title": "Retryable HTTP status",
+      "task_description": "Implement is_retryable_status(status): true only for 408, 425, 429, and 500..599; false for all other HTTP status codes.",
+      "repository_path": "scenarios/BUG-011",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    },
+    {
+      "case_id": "BUG-012",
+      "title": "Atomic in-memory update",
+      "task_description": "Implement apply_updates(state, updates): apply updates to a copy and return it; if any key is not a string or any value is None, raise ValueError and do not mutate the original state.",
+      "repository_path": "scenarios/BUG-012",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    },
+    {
+      "case_id": "BUG-013",
+      "title": "Optimistic version check",
+      "task_description": "Implement update_if_version(record, expected_version, changes): update and increment version only when versions match; otherwise raise ValueError. Do not mutate on conflict.",
+      "repository_path": "scenarios/BUG-013",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    },
+    {
+      "case_id": "BUG-014",
+      "title": "Secret redaction",
+      "task_description": "Implement redact_secrets(text): redact values after case-insensitive keys api_key, token, password, secret when followed by = or :. Preserve key and separator.",
+      "repository_path": "scenarios/BUG-014",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    },
+    {
+      "case_id": "BUG-015",
+      "title": "Resource ownership authorization",
+      "task_description": "Implement can_access(resource_owner_id, current_user_id, is_admin=False): allow owner or admin only.",
+      "repository_path": "scenarios/BUG-015",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    },
+    {
+      "case_id": "BUG-016",
+      "title": "JSON-safe serialization",
+      "task_description": "Implement to_json_value(value): convert UUID to string, datetime to ISO string, Enum to its value, recursively handle dict/list/tuple, and leave JSON primitives unchanged.",
+      "repository_path": "scenarios/BUG-016",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    },
+    {
+      "case_id": "BUG-017",
+      "title": "Empty collection average",
+      "task_description": "Implement safe_average(values): return None for empty input and arithmetic mean otherwise.",
+      "repository_path": "scenarios/BUG-017",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    },
+    {
+      "case_id": "BUG-018",
+      "title": "Unicode-safe truncation",
+      "task_description": "Implement truncate_text(text, max_chars): truncate by Unicode code points, return unchanged if within limit, reject negative limits.",
+      "repository_path": "scenarios/BUG-018",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    },
+    {
+      "case_id": "BUG-019",
+      "title": "Guaranteed resource cleanup",
+      "task_description": "Implement use_resource(resource, operation): call operation(resource), and always call resource.close() exactly once, including when operation raises; return operation result.",
+      "repository_path": "scenarios/BUG-019",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    },
+    {
+      "case_id": "BUG-020",
+      "title": "Required configuration validation",
+      "task_description": "Implement require_config(config, required_keys): return a copy when all keys exist and have non-empty values; otherwise raise ValueError listing missing keys without printing values.",
+      "repository_path": "scenarios/BUG-020",
+      "acceptance_test_command": "python -m pytest -q",
+      "expected_initial_state": "failing",
+      "expected_fixed_state": "passing"
+    }
+  ]
+}

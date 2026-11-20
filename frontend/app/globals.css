@@ -1,0 +1,112 @@
+
+@import "tailwindcss";
+
+:root {
+  --background: #09090b;
+  --foreground: #fafafa;
+  --surface: #111114;
+  --surface-hover: #19191f;
+  --border: #27272f;
+  --muted: #92929f;
+  --primary: #8b5cf6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: #8b5cf6;
+  color: white;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #383842;
+  border-radius: 10px;
+}
+
+.dashboard-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: border-color 0.2s ease;
+}
+
+.dashboard-card:hover {
+  border-color: #454552;
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: #a1a1aa;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.sidebar-link:hover {
+  color: white;
+  background: #19191f;
+}
+
+.sidebar-link.active {
+  color: white;
+  background: #292039;
+}
+
+.sidebar-link.active svg {
+  color: #a78bfa;
+}
+
+
+.settings-input {
+  width: 100%;
+  border: 1px solid #303039;
+  border-radius: 8px;
+  background: #09090b;
+  padding: 10px 12px;
+  color: #e4e4e7;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 150ms ease;
+}
+
+.settings-input:focus {
+  border-color: #8b5cf6;
+}
+
+.settings-input:disabled {
+  cursor: not-allowed;
+}
+
+.settings-input option {
+  background: #111114;
+  color: #e4e4e7;
+}

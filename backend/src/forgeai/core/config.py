@@ -66,6 +66,17 @@ class Settings(BaseSettings):
     langfuse_secret_key: SecretStr | None = None
     langfuse_base_url: str = "https://cloud.langfuse.com"
 
+    # GitHub integration
+    github_token: SecretStr | None = None
+    github_api_url: str = "https://api.github.com"
+
+    # OpenTelemetry tracing. Console export is useful for local verification;
+    # production deployments should point an OTLP exporter at a collector.
+    otel_enabled: bool = True
+    otel_service_name: str = "forgeai-backend"
+    otel_exporter: Literal["console", "otlp"] = "console"
+    otel_exporter_otlp_endpoint: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

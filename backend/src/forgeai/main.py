@@ -17,6 +17,7 @@ from forgeai.agent.reviewer import ReviewerAgent
 
 from forgeai.api.approvals import router as approvals_router
 from forgeai.api.auth import router as auth_router
+from forgeai.api.github import router as github_router
 from forgeai.api.health import router as health_router
 from forgeai.api.runs import router as runs_router
 from forgeai.api.tasks import router as tasks_router
@@ -24,6 +25,7 @@ from forgeai.api.tasks import router as tasks_router
 from forgeai.application.approved_patch_execution_worker import (
     ApprovedPatchExecutionWorker,
 )
+from forgeai.application.github.github_service import GitHubService
 from forgeai.application.mcp.mcp_connection_service import (
     MCPConnectionService,
 )
@@ -52,6 +54,7 @@ from forgeai.execution.post_application_verifier import (
 )
 from forgeai.execution.sandbox.e2b_provider import E2BSandboxProvider
 
+from forgeai.infrastructure.github.github_client import GitHubClient
 from forgeai.infrastructure.mcp import MCPClientManager, MCPServerConfig
 from forgeai.infrastructure.mcp.servers.playwright_server_config import (
     create_playwright_server_config,
@@ -68,9 +71,13 @@ from forgeai.services.repository_context_result import (
 )
 
 from forgeai.telemetry.langfuse_client import LangfuseTelemetry
+from forgeai.telemetry.opentelemetry import configure_tracing, shutdown_tracing
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 
 
 settings = get_settings()
+configure_tracing(settings)
 
 
 def build_mcp_server_configs() -> list[MCPServerConfig]:
@@ -181,13 +188,16 @@ async def lifespan(app: FastAPI):
     - Initialize Langfuse telemetry.
     - Construct shared LLM and agent dependencies.
     - Start trusted MCP servers when enabled.
+    - Construct GitHub integration when configured.
     - Construct E2B sandbox provider.
     - Compile the agent graph.
 
     Shutdown:
     - Disconnect MCP servers.
+    - Close the GitHub HTTP client.
     - Flush Langfuse telemetry.
     - Close the checkpoint connection pool.
+    - Flush OpenTelemetry tracing.
     """
 
     if settings.e2b_api_key is None:
@@ -212,6 +222,10 @@ async def lifespan(app: FastAPI):
     mcp_connection_service = None
     mcp_client_manager = None
     telemetry = None
+    github_client = None
+
+    # GitHub is optional. The rest of ForgeAI can start without it.
+    app.state.github_service = None
 
     try:
         # 1. Open PostgreSQL connection pool.
@@ -242,7 +256,18 @@ async def lifespan(app: FastAPI):
             telemetry=telemetry,
         )
 
-        # 5. Initialize MCP infrastructure.
+        # 5. Initialize GitHub integration when configured.
+        if settings.github_token is not None:
+            github_client = GitHubClient(
+                token=settings.github_token,
+                base_url=settings.github_api_url,
+            )
+
+            app.state.github_service = GitHubService(
+                client=github_client,
+            )
+
+        # 6. Initialize MCP infrastructure.
         mcp_research_service = None
 
         if settings.mcp_enabled:
@@ -288,16 +313,16 @@ async def lifespan(app: FastAPI):
                 max_rounds=settings.mcp_max_rounds,
             )
 
-        # 6. Construct agents using the shared LLM service.
+        # 7. Construct agents using the shared LLM service.
         planner_agent = PlannerAgent(llm_service)
         researcher_agent = ResearcherAgent(llm_service)
         coder_agent = CoderAgent(llm_service)
         reviewer_agent = ReviewerAgent(llm_service)
 
-        # 7. Construct E2B sandbox provider.
+        # 8. Construct E2B sandbox provider.
         sandbox_provider = E2BSandboxProvider(settings)
 
-        # 8. Construct patch preparation dependencies.
+        # 9. Construct patch preparation dependencies.
         patch_validator = PatchValidator()
 
         patch_preparation_service = PatchPreparationService(
@@ -347,7 +372,7 @@ async def lifespan(app: FastAPI):
                 worker_id=f"forgeai-api-{uuid4()}",
             )
 
-        # 9. Compile the complete LangGraph workflow.
+        # 10. Compile the complete LangGraph workflow.
         graph = build_agent_graph(
             planner_agent=planner_agent,
             researcher_agent=researcher_agent,
@@ -363,7 +388,7 @@ async def lifespan(app: FastAPI):
             mcp_max_tool_calls=settings.mcp_max_tool_calls,
         )
 
-        # 10. Expose application resources.
+        # 11. Expose application resources.
         app.state.graph = graph
 
         app.state.checkpointer = checkpointer
@@ -379,20 +404,29 @@ async def lifespan(app: FastAPI):
         yield
 
     finally:
-        # 11. Disconnect MCP servers before closing application resources.
+        # 12. Disconnect MCP servers before closing application resources.
         try:
             if mcp_connection_service is not None:
                 await mcp_connection_service.disconnect_all()
 
         finally:
-            # 12. Flush pending Langfuse events.
+            # 13. Close the GitHub HTTP client.
             try:
-                if telemetry is not None:
-                    telemetry.flush()
+                if github_client is not None:
+                    await github_client.close()
 
             finally:
-                # 13. Close the PostgreSQL connection pool.
-                checkpoint_pool.close()
+                # 14. Flush pending Langfuse events.
+                try:
+                    if telemetry is not None:
+                        telemetry.flush()
+
+                finally:
+                    # 15. Close PostgreSQL and flush tracing.
+                    try:
+                        checkpoint_pool.close()
+                    finally:
+                        shutdown_tracing()
 
 
 app = FastAPI(
@@ -402,12 +436,48 @@ app = FastAPI(
 )
 
 
+@app.middleware("http")
+async def trace_http_request(request, call_next):
+    """Trace API requests without capturing credentials or request bodies."""
+    tracer = trace.get_tracer("forgeai.http")
+
+    with tracer.start_as_current_span("http.server.request") as span:
+        span.set_attribute("http.request.method", request.method)
+        span.set_attribute("http.route.path", request.url.path[:256])
+
+        try:
+            response = await call_next(request)
+
+            span.set_attribute(
+                "http.response.status_code",
+                response.status_code,
+            )
+
+            if response.status_code >= 500:
+                span.set_status(
+                    Status(StatusCode.ERROR, "HTTP server error")
+                )
+
+            trace_id = span.get_span_context().trace_id
+
+            if trace_id:
+                response.headers["X-Trace-Id"] = f"{trace_id:032x}"
+
+            return response
+
+        except Exception as exc:
+            span.record_exception(exc)
+            span.set_status(Status(StatusCode.ERROR, type(exc).__name__))
+            raise
+
+
 # Register API routers.
 app.include_router(health_router)
 app.include_router(tasks_router)
 app.include_router(auth_router)
 app.include_router(approvals_router)
 app.include_router(runs_router)
+app.include_router(github_router)
 
 
 @app.get("/")

@@ -1,0 +1,167 @@
+{
+  "benchmark_name": "ForgeAI Bug-Fixing Evaluation",
+  "version": 1,
+  "description": "20 configurable bug-fixing scenarios. Replace repository_url and tailor each case to defects that actually exist in the selected benchmark repository before running.",
+  "cases": [
+    {
+      "case_id": "BUG-001",
+      "title": "Null input handling",
+      "task_description": "Fix a crash when the application receives an empty or null request payload. Return a clear validation error and add a regression test.",
+      "repository_url": "",
+      "acceptance_criteria": "A null or empty payload is rejected safely; a regression test covers it.",
+      "expected_terminal_status": "succeeded"
+    },
+    {
+      "case_id": "BUG-002",
+      "title": "Missing resource handling",
+      "task_description": "Fix an endpoint that raises an unhandled exception when a requested resource does not exist.",
+      "repository_url": "",
+      "acceptance_criteria": "The endpoint returns the documented not-found response; add a regression test.",
+      "expected_terminal_status": "succeeded"
+    },
+    {
+      "case_id": "BUG-003",
+      "title": "Invalid identifier validation",
+      "task_description": "Fix handling of malformed identifiers so invalid input is rejected before database access.",
+      "repository_url": "",
+      "acceptance_criteria": "Malformed identifiers return a validation error and do not trigger database queries.",
+      "expected_terminal_status": "succeeded"
+    },
+    {
+      "case_id": "BUG-004",
+      "title": "Pagination boundary",
+      "task_description": "Fix pagination when limit is zero, negative, or larger than the supported maximum.",
+      "repository_url": "",
+      "acceptance_criteria": "Pagination inputs are validated and boundary tests pass.",
+      "expected_terminal_status": "succeeded"
+    },
+    {
+      "case_id": "BUG-005",
+      "title": "Duplicate record creation",
+      "task_description": "Prevent duplicate records when the same create request is submitted twice.",
+      "repository_url": "",
+      "acceptance_criteria": "Duplicate behavior is deterministic and covered by tests.",
+      "expected_terminal_status": "succeeded"
+    },
+    {
+      "case_id": "BUG-006",
+      "title": "Incorrect status transition",
+      "task_description": "Prevent a resource from moving from a terminal status back into an active status.",
+      "repository_url": "",
+      "acceptance_criteria": "Invalid transitions are rejected and valid transitions remain supported.",
+      "expected_terminal_status": "succeeded"
+    },
+    {
+      "case_id": "BUG-007",
+      "title": "Timezone comparison",
+      "task_description": "Fix comparisons between timezone-aware and timezone-naive timestamps.",
+      "repository_url": "",
+      "acceptance_criteria": "Timestamp comparisons are timezone-safe and regression-tested.",
+      "expected_terminal_status": "succeeded"
+    },
+    {
+      "case_id": "BUG-008",
+      "title": "File path traversal",
+      "task_description": "Prevent user-controlled paths from reading or writing outside the configured workspace.",
+      "repository_url": "",
+      "acceptance_criteria": "Traversal attempts are rejected; normal workspace paths continue to work.",
+      "expected_terminal_status": "succeeded"
+    },
+    {
+      "case_id": "BUG-009",
+      "title": "Unsafe archive extraction",
+      "task_description": "Prevent archive entries from escaping the extraction directory.",
+      "repository_url": "",
+      "acceptance_criteria": "Archive extraction validates resolved paths and includes traversal tests.",
+      "expected_terminal_status": "succeeded"
+    },
+    {
+      "case_id": "BUG-010",
+      "title": "Subprocess timeout",
+      "task_description": "Ensure a long-running subprocess is terminated when its configured timeout expires.",
+      "repository_url": "",
+      "acceptance_criteria": "Timed-out processes are stopped and the caller receives a controlled timeout result.",
+      "expected_terminal_status": "succeeded"
+    },
+    {
+      "case_id": "BUG-011",
+      "title": "HTTP retry behavior",
+      "task_description": "Fix retry behavior so non-retryable client errors are not retried indefinitely.",
+      "repository_url": "",
+      "acceptance_criteria": "Only configured transient failures are retried, with a finite attempt count.",
+      "expected_terminal_status": "succeeded"
+    },
+    {
+      "case_id": "BUG-012",
+      "title": "Database transaction rollback",
+      "task_description": "Ensure a failed multi-step write rolls back all partial database changes.",
+      "repository_url": "",
+      "acceptance_criteria": "Failure leaves no partial records and a regression test verifies rollback.",
+      "expected_terminal_status": "succeeded"
+    },
+    {
+      "case_id": "BUG-013",
+      "title": "Concurrent update conflict",
+      "task_description": "Prevent lost updates when two requests modify the same record concurrently.",
+      "repository_url": "",
+      "acceptance_criteria": "Conflicting updates are detected or safely serialized and tested.",
+      "expected_terminal_status": "succeeded"
+    },
+    {
+      "case_id": "BUG-014",
+      "title": "Secret leakage in logs",
+      "task_description": "Remove credentials and sensitive tokens from application log messages and error responses.",
+      "repository_url": "",
+      "acceptance_criteria": "Logs and responses do not contain test secrets; add a redaction test.",
+      "expected_terminal_status": "succeeded"
+    },
+    {
+      "case_id": "BUG-015",
+      "title": "Missing authorization check",
+      "task_description": "Ensure users cannot read or modify resources owned by another user.",
+      "repository_url": "",
+      "acceptance_criteria": "Cross-user access is denied and ownership tests cover read and write paths.",
+      "expected_terminal_status": "succeeded"
+    },
+    {
+      "case_id": "BUG-016",
+      "title": "JSON serialization failure",
+      "task_description": "Fix serialization of UUID, datetime, and enum values in API responses.",
+      "repository_url": "",
+      "acceptance_criteria": "Responses serialize supported values consistently and endpoint tests pass.",
+      "expected_terminal_status": "succeeded"
+    },
+    {
+      "case_id": "BUG-017",
+      "title": "Empty collection edge case",
+      "task_description": "Fix aggregation logic that crashes or returns incorrect values for an empty collection.",
+      "repository_url": "",
+      "acceptance_criteria": "Empty collections return a valid neutral result and are regression-tested.",
+      "expected_terminal_status": "succeeded"
+    },
+    {
+      "case_id": "BUG-018",
+      "title": "Unicode handling",
+      "task_description": "Fix text processing that corrupts or rejects valid non-ASCII input.",
+      "repository_url": "",
+      "acceptance_criteria": "Unicode input is preserved correctly and tests cover multi-byte characters.",
+      "expected_terminal_status": "succeeded"
+    },
+    {
+      "case_id": "BUG-019",
+      "title": "Resource cleanup",
+      "task_description": "Ensure database sessions, files, or subprocess handles are released after exceptions.",
+      "repository_url": "",
+      "acceptance_criteria": "Resources are cleaned up on success and failure; tests verify cleanup.",
+      "expected_terminal_status": "succeeded"
+    },
+    {
+      "case_id": "BUG-020",
+      "title": "Configuration validation",
+      "task_description": "Fail fast with a clear configuration error when a required setting is invalid or missing.",
+      "repository_url": "",
+      "acceptance_criteria": "Invalid configuration is reported clearly without exposing secret values.",
+      "expected_terminal_status": "succeeded"
+    }
+  ]
+}

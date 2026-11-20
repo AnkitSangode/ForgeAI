@@ -76,6 +76,19 @@ class AgentRunService:
             self.session.rollback()
             raise
 
+    def list_runs(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        task_id: UUID | None = None,
+    ) -> list[AgentRun]:
+        if offset < 0:
+            raise ValueError("offset must be non-negative")
+        if not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        return self.repository.list(offset=offset, limit=limit, task_id=task_id)
+
     def get_run(self, run_id: str) -> AgentRun:
         run = self.repository.get_by_id(UUID(run_id))
 

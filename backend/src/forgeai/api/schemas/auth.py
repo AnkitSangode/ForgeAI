@@ -21,3 +21,10 @@ class CurrentUserResponse(BaseModel):
     id: str
     email: EmailStr
     is_active: bool
+
+
+class RegisterRequest(BaseModel):
+    """Credentials used to create a new account."""
+
+    email: EmailStr
+    password: str = Field(min_length=12, max_length=128)

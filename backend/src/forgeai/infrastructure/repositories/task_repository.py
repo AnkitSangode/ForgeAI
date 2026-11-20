@@ -20,3 +20,12 @@ class TaskRepository:
     def get_by_id(self, task_id: UUID) -> Task | None:
         statement = select(Task).where(Task.id == task_id)
         return self.session.scalar(statement)
+
+    def list(self, *, offset: int = 0, limit: int = 50) -> list[Task]:
+        statement = (
+            select(Task)
+            .order_by(Task.created_at.desc(), Task.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list(self.session.scalars(statement).all())
