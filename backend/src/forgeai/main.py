@@ -438,9 +438,8 @@ app = FastAPI(
 )
 
 allowed_origins = [
-    origin.strip()
-    for origin in settings.cors_origins.split(",")
-    if origin.strip()
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
 ]
 if allowed_origins:
     app.add_middleware(
