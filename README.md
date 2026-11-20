@@ -8,9 +8,6 @@
   An autonomous software engineering platform that uses specialized AI agents, repository intelligence, sandboxed execution, and human approval workflows to assist with real-world software development tasks.
 </p>
 
-<p align="center">
-  <img src="docs/screenshots/forgeai-banner.png" alt="ForgeAI Banner" width="100%" />
-</p>
 
 <p align="center">
   <a href="https://github.com/AnkitSangode/ForgeAI">GitHub Repository</a> •
